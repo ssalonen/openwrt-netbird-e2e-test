@@ -49,6 +49,23 @@ def test_runtime_mode_normalizes_serial_crlf_before_assertions():
     assert "tr -d '\\r'" in text
 
 
+def test_runtime_requires_explicit_enrollment_and_payload_inputs():
+    text = HARNESS.read_text()
+    runtime = text.split('run)', 1)[1].split(';;', 1)[0]
+    for required in ('NB_SETUP_KEY', 'NB_MANAGEMENT_URL', 'NB_CA_CERT', 'PEER_OVERLAY_IP'):
+        assert required in runtime
+
+
+def test_runtime_has_separate_p2p_and_relay_assertions():
+    text = HARNESS.read_text()
+    runtime = text.split('run)', 1)[1].split(';;', 1)[0]
+    assert 'Connection type: P2P' in runtime
+    assert 'Connection type: Relayed' in runtime
+    assert 'NB_FORCE_RELAY=true' in runtime
+    assert 'netbird up --setup-key' in runtime
+    assert 'overlay-nonce' in runtime
+
+
 if __name__ == '__main__':
     test_harness_has_separate_image_build_and_tap_only_run_modes()
     test_image_build_indexes_pr_package_before_imagebuilder_runs()
@@ -56,4 +73,6 @@ if __name__ == '__main__':
     test_image_build_resigns_only_the_local_copy_with_sdk_key()
     test_runtime_mode_has_no_user_nat_netdev()
     test_runtime_mode_normalizes_serial_crlf_before_assertions()
+    test_runtime_requires_explicit_enrollment_and_payload_inputs()
+    test_runtime_has_separate_p2p_and_relay_assertions()
     print('PASS: QEMU NetBird harness contract')

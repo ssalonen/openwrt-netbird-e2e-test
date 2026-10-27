@@ -28,13 +28,23 @@ OUTPUT_IMAGE=$PWD/openwrt-netbird-wget-ext4.img.gz \
 ./harness.sh build-image
 ```
 
-## TAP-only topology smoke
+## TAP-only NetBird enrollment, P2P, and relay gate
+
+`run` requires an already-running NetBird server fixture and an enrolled Docker reference peer on the same controlled topology. It creates a fresh nonce, serves it from that peer, then requires the OpenWrt guest to fetch it over the overlay first as P2P and then with relay forcing enabled.
 
 ```sh
-sudo IMAGE=$PWD/openwrt-netbird-wget-ext4.img.gz ./harness.sh run
+sudo IMAGE=$PWD/openwrt-netbird-wget-ext4.img.gz \
+  NB_SETUP_KEY="$(cat /secure/runtime/setup-key)" \
+  NB_MANAGEMENT_URL=https://netbird.netbird.test \
+  NB_CA_CERT=/secure/runtime/ca-bundle.pem \
+  PEER_CONTAINER=netbird-reference-peer \
+  PEER_OVERLAY_IP=100.77.120.41 \
+  ./harness.sh run
 ```
 
-`run` deliberately has no user-mode NAT NIC. Package construction and runtime network verification are separate phases.
+The setup key and CA are provided through QEMU `fw_cfg`, not the serial command stream. The guest has only the namespace-local TAP NIC; there is no user-mode NAT NIC, WAN route, or provisioning interface in this phase.
+
+The peer container must have `python3` and must already be connected to the same test NetBird control plane. The current harness starts a temporary HTTP server inside that container and removes it during cleanup.
 
 ## Local contract test
 
