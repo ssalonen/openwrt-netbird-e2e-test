@@ -15,6 +15,7 @@ state="$state_root/$run_id"
 ns="nbqemu-$run_id"
 tap="tap0"
 bridge="br0"
+gateway="gw-$run_id"
 peer="nbqemu-peer-$run_id"
 
 need() {
@@ -83,6 +84,7 @@ run)
         test -f "$state/qemu.pid" && kill "$(cat "$state/qemu.pid")" 2>/dev/null || true
         docker exec "$PEER_CONTAINER" sh -c 'test -f /tmp/overlay-payload.pid && kill "$(cat /tmp/overlay-payload.pid)" 2>/dev/null || true; rm -f /tmp/overlay-nonce /tmp/overlay-payload.pid' >/dev/null 2>&1 || true
         docker rm -f "$peer" >/dev/null 2>&1 || true
+        ip link del "$gateway" >/dev/null 2>&1 || true
         ip netns del "$ns" >/dev/null 2>&1 || true
         rm -rf "$state"
     }
@@ -100,6 +102,13 @@ run)
     ip -n "$ns" tuntap add dev "$tap" mode tap
     ip -n "$ns" link set "$tap" master "$bridge"
     ip -n "$ns" link set "$tap" up
+    # Temporary host/namespace gateway for the fixture control plane only.
+    ip link add "$gateway" type veth peer name gw0
+    ip addr add 192.0.2.1/24 dev "$gateway"
+    ip link set "$gateway" up
+    ip link set gw0 netns "$ns"
+    ip -n "$ns" link set gw0 master "$bridge"
+    ip -n "$ns" link set gw0 up
 
     docker run -d --rm --name "$peer" --network none --cap-add NET_ADMIN "$PEER_IMAGE" sleep 300 >/dev/null
     peer_pid="$(docker inspect -f '{{.State.Pid}}' "$peer")"
@@ -130,7 +139,7 @@ run)
         printf '\n'
         sleep 2
         # shellcheck disable=SC2016 # Deliberately emitted for expansion by the guest shell.
-        printf 'ip addr flush dev br-lan; ip addr add 192.0.2.10/24 dev br-lan; ip link set br-lan up; mkdir -p /etc/ssl/certs; cat /sys/firmware/qemu_fw_cfg/by_name/opt/netbird/ca-cert/raw > /etc/ssl/certs/netbird-e2e-ca.pem; setup_key=$(cat /sys/firmware/qemu_fw_cfg/by_name/opt/netbird/setup-key/raw); /etc/init.d/netbird start; netbird up --setup-key "$setup_key" --management-url "%s"; unset setup_key; for i in $(seq 1 30); do netbird status -d | grep -F "Connection type: P2P" && break; sleep 2; done; netbird status -d; wget -qO- "http://%s:%s/overlay-nonce" | grep -Fx "%s"; echo P2P-OVERLAY-PASS; /etc/init.d/netbird stop; NB_FORCE_RELAY=true /usr/bin/netbird service run >/tmp/netbird-relay.log 2>&1 & for i in $(seq 1 30); do netbird status -d | grep -F "Connection type: Relayed" && break; sleep 2; done; netbird status -d; wget -qO- "http://%s:%s/overlay-nonce" | grep -Fx "%s"; echo RELAY-OVERLAY-PASS\n' "$NB_MANAGEMENT_URL" "$PEER_OVERLAY_IP" "$PEER_PAYLOAD_PORT" "$overlay_nonce" "$PEER_OVERLAY_IP" "$PEER_PAYLOAD_PORT" "$overlay_nonce"
+        printf 'ip addr flush dev br-lan; ip addr add 192.0.2.10/24 dev br-lan; ip link set br-lan up; ip route replace default via 192.0.2.1; mkdir -p /etc/ssl/certs; cat /sys/firmware/qemu_fw_cfg/by_name/opt/netbird/ca-cert/raw > /etc/ssl/certs/netbird-e2e-ca.pem; setup_key=$(cat /sys/firmware/qemu_fw_cfg/by_name/opt/netbird/setup-key/raw); /etc/init.d/netbird start; netbird up --setup-key "$setup_key" --management-url "%s"; unset setup_key; for i in $(seq 1 30); do netbird status -d | grep -F "Connection type: P2P" && break; sleep 2; done; netbird status -d; wget -qO- "http://%s:%s/overlay-nonce" | grep -Fx "%s"; echo P2P-OVERLAY-PASS; /etc/init.d/netbird stop; NB_FORCE_RELAY=true /usr/bin/netbird service run >/tmp/netbird-relay.log 2>&1 & for i in $(seq 1 30); do netbird status -d | grep -F "Connection type: Relayed" && break; sleep 2; done; netbird status -d; wget -qO- "http://%s:%s/overlay-nonce" | grep -Fx "%s"; echo RELAY-OVERLAY-PASS\n' "$NB_MANAGEMENT_URL" "$PEER_OVERLAY_IP" "$PEER_PAYLOAD_PORT" "$overlay_nonce" "$PEER_OVERLAY_IP" "$PEER_PAYLOAD_PORT" "$overlay_nonce"
         sleep 20
     } | timeout 90 nc -U "$state/serial.sock" > "$state/console.log" 2>&1 || true
     tr -d '\r' < "$state/console.log" > "$state/console.normalized"
