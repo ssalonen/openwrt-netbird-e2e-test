@@ -1,0 +1,54 @@
+---
+name: Avrea runner preflight
+
+"on":
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  harness-contract:
+    name: ${{ matrix.arch }} harness contract
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            machine: x86_64
+            runner: avrea-ubuntu-latest-4-vcpu
+          - arch: arm64
+            machine: aarch64
+            runner: avrea-ubuntu-latest-arm-4-vcpu
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify runner architecture
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(uname -m)"
+          test "$actual" = "${{ matrix.machine }}" || {
+            echo "expected ${{ matrix.machine }} for ${{ matrix.arch }}, got $actual" >&2
+            exit 1
+          }
+      - name: Check QEMU E2E prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v docker
+          command -v qemu-system-x86_64 || true
+          test -c /dev/net/tun
+          test -c /dev/kvm
+          echo 'KVM is available'
+      - name: Validate harness
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 test_harness.py
+          bash -n harness.sh
+          yamllint -d '{extends: default, rules: {line-length: disable}}' .github/workflows/avrea.yml
