@@ -33,8 +33,17 @@ chmod 700 getting-started.sh
 NETBIRD_NON_INTERACTIVE=true \
 NETBIRD_DOMAIN=use-ip \
 NETBIRD_REVERSE_PROXY_TYPE=5 \
-NETBIRD_BIND_LOCALHOST_ONLY=true \
+NETBIRD_BIND_LOCALHOST_ONLY=false \
+NETBIRD_SERVER_IMAGE="netbirdio/netbird-server:${NETBIRD_SERVER_VERSION:-0.81.4}" \
 ./getting-started.sh
+cat > compose.ci.yml <<'EOF'
+services:
+  netbird-server:
+    environment:
+      NB_SETUP_PAT_ENABLED: "true"
+    ports:
+      - "80:80"
+EOF
+docker compose -f docker-compose.yml -f compose.ci.yml up -d --force-recreate netbird-server
 
-docker compose ps
 printf 'FIXTURE_WORKDIR=%s\n' "$work"
