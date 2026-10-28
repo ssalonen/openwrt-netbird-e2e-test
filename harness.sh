@@ -68,7 +68,7 @@ run)
     : "${PEER_IMAGE:=alpine:3.21}"
     test -s "$IMAGE"
     test -s "$NB_CA_CERT"
-    [[ "$NB_MANAGEMENT_URL" =~ ^https://[A-Za-z0-9.-]+(:[0-9]+)?$ ]] || { echo "NB_MANAGEMENT_URL must be a simple https URL" >&2; exit 2; }
+    [[ "$NB_MANAGEMENT_URL" =~ ^https?://[A-Za-z0-9.-]+(:[0-9]+)?$ ]] || { echo "NB_MANAGEMENT_URL must be a simple http(s) URL" >&2; exit 2; }
     [[ "$PEER_OVERLAY_IP" =~ ^100\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]] || { echo "PEER_OVERLAY_IP must be a NetBird overlay IPv4 address" >&2; exit 2; }
     [[ "$PEER_CONTAINER" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]] || { echo "PEER_CONTAINER has invalid characters" >&2; exit 2; }
     [[ "$PEER_PAYLOAD_PORT" =~ ^[0-9]{2,5}$ ]] || { echo "PEER_PAYLOAD_PORT must be numeric" >&2; exit 2; }
