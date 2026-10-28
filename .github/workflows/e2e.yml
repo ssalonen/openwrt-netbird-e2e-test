@@ -1,0 +1,70 @@
+---
+name: NetBird E2E
+
+"on":
+  workflow_dispatch:
+    inputs:
+      image_url:
+        description: HTTPS URL of a hash-verified, baked OpenWrt guest image
+        required: true
+        type: string
+      image_sha256:
+        description: SHA-256 of image_url
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  e2e-x86_64:
+    runs-on: avrea-ubuntu-latest-4-vcpu
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - name: Fetch baked guest image
+        run: |
+          set -euo pipefail
+          curl -fsSL "$IMAGE_URL" -o guest.img.gz
+          echo "$IMAGE_SHA256  guest.img.gz" | sha256sum -c -
+        env:
+          IMAGE_URL: ${{ inputs.image_url }}
+          IMAGE_SHA256: ${{ inputs.image_sha256 }}
+      - name: Start and bootstrap upstream fixture
+        run: |
+          set -euo pipefail
+          sudo FIXTURE_ROOT="$RUNNER_TEMP" FIXTURE_RUN_ID="nbfixture-${GITHUB_RUN_ID}" fixtures/upstream/start.sh
+          fixture="$RUNNER_TEMP/nbfixture-${GITHUB_RUN_ID}"
+          host_ip="$(ip route get 1.1.1.1 | awk '{print $7; exit}')"
+          sudo NETBIRD_URL="http://$host_ip" fixtures/upstream/bootstrap.sh "$fixture/state"
+          printf 'FIXTURE=%s\nHOST_IP=%s\n' "$fixture" "$host_ip" >> "$GITHUB_ENV"
+      - name: Enroll reference peer
+        run: |
+          set -euo pipefail
+          sudo docker run -d --rm --name netbird-reference --hostname netbird-reference \
+            --network host --privileged \
+            -e NB_SETUP_KEY="$(sudo cat "$FIXTURE/state/setup-key")" \
+            -e NB_MANAGEMENT_URL="http://$HOST_IP" \
+            -v netbird-reference:/var/lib/netbird netbirdio/netbird:0.81.4
+          for _ in $(seq 1 60); do
+            sudo docker exec netbird-reference netbird status | grep -q 'Management: Connected' && break
+            sleep 2
+          done
+          sudo docker exec netbird-reference netbird status
+          sudo docker exec netbird-reference netbird status --json > reference-status.json
+          peer_ip="$(python3 -c 'import json; d=json.load(open("reference-status.json")); print(d["netbirdIp"])')"
+          echo "PEER_IP=$peer_ip" >> "$GITHUB_ENV"
+      - name: Run P2P and forced-relay QEMU assertions
+        run: |
+          set -euo pipefail
+          sudo IMAGE="$GITHUB_WORKSPACE/guest.img.gz" \
+            NB_SETUP_KEY="$(sudo cat "$FIXTURE/state/setup-key")" \
+            NB_MANAGEMENT_URL="http://$HOST_IP" \
+            NB_CA_CERT=/etc/ssl/certs/ca-certificates.crt \
+            PEER_CONTAINER=netbird-reference PEER_OVERLAY_IP="$PEER_IP" \
+            RUN_ID="e2e${GITHUB_RUN_ID: -6}" ./harness.sh run
+      - name: Cleanup fixture
+        if: always()
+        run: |
+          sudo docker rm -f netbird-reference || true
+          test -n "${FIXTURE:-}" && sudo fixtures/upstream/stop.sh "$FIXTURE" || true
