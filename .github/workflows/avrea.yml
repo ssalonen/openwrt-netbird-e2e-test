@@ -44,6 +44,8 @@ jobs:
           command -v qemu-system-x86_64 || true
           test -c /dev/net/tun
           test -c /dev/kvm
+          command -v nft || true
+          command -v iptables || true
           echo 'KVM is available'
       - name: Validate harness
         shell: bash
