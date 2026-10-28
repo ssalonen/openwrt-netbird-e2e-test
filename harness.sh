@@ -81,11 +81,15 @@ run)
     overlay_nonce="$(openssl rand -hex 24)"
     forwarding_before="$(sysctl -n net.ipv4.ip_forward)"
     sysctl -w net.ipv4.ip_forward=1 >/dev/null
+    nat_comment="openwrt-netbird-e2e-$run_id"
     cleanup() {
         set +e
         test -f "$state/qemu.pid" && kill "$(cat "$state/qemu.pid")" 2>/dev/null || true
         docker exec "$PEER_CONTAINER" sh -c 'test -f /tmp/overlay-payload.pid && kill "$(cat /tmp/overlay-payload.pid)" 2>/dev/null || true; rm -f /tmp/overlay-nonce /tmp/overlay-payload.pid' >/dev/null 2>&1 || true
         docker rm -f "$peer" >/dev/null 2>&1 || true
+        iptables -D FORWARD -o "$gateway" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT >/dev/null 2>&1 || true
+        iptables -D FORWARD -i "$gateway" -j ACCEPT >/dev/null 2>&1 || true
+        iptables -t nat -D POSTROUTING -s 192.0.2.0/24 -m comment --comment "$nat_comment" -j MASQUERADE >/dev/null 2>&1 || true
         ip link del "$gateway" >/dev/null 2>&1 || true
         sysctl -w "net.ipv4.ip_forward=$forwarding_before" >/dev/null 2>&1 || true
         ip netns del "$ns" >/dev/null 2>&1 || true
@@ -112,6 +116,9 @@ run)
     ip link set gw0 netns "$ns"
     ip -n "$ns" link set gw0 master "$bridge"
     ip -n "$ns" link set gw0 up
+    iptables -t nat -A POSTROUTING -s 192.0.2.0/24 -m comment --comment "$nat_comment" -j MASQUERADE
+    iptables -A FORWARD -i "$gateway" -j ACCEPT
+    iptables -A FORWARD -o "$gateway" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 
     docker run -d --rm --name "$peer" --network none --cap-add NET_ADMIN "$PEER_IMAGE" sleep 300 >/dev/null
     peer_pid="$(docker inspect -f '{{.State.Pid}}' "$peer")"
