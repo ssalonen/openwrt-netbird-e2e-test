@@ -34,14 +34,6 @@ class ReportTests(unittest.TestCase):
                        'Relayed overlay payload: PASS', 'Cleanup: PASS'):
             self.assertIn(detail, text)
 
-    def test_snapshot_reports_locally_built_ubus_abi(self):
-        self.provenance['libubus_apk_sha256'] = 'f' * 64
-        text, passed = report.render_arch(self.selection, self.provenance, self.result,
-                                          'x86_64', 'success', 'success')
-        self.assertTrue(passed)
-        self.assertIn('libubus APK SHA-256', text)
-        self.assertIn('f' * 64, text)
-
     def test_cannot_report_pass_when_runtime_or_cleanup_failed(self):
         text, verdict = report.render_arch(self.selection, self.provenance, self.result,
                                            'x86_64', 'success', 'failure')

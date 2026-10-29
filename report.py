@@ -30,8 +30,6 @@ def render_arch(selection, provenance, result, arch, runtime, cleanup):
                           f"- **{label} SHA-256:** `{tool['sha256']}`"])
         lines.extend([f"- **NetBird APK SHA-256:** `{provenance['netbird_apk_sha256']}`",
                       f"- **Baked guest image SHA-256:** `{provenance['guest_image']['sha256']}`"])
-        if provenance.get('libubus_apk_sha256'):
-            lines.append(f"- **Snapshot libubus APK SHA-256:** `{provenance['libubus_apk_sha256']}`")
     else:
         lines.append('- **Build provenance:** unavailable (build/download failed)')
     lines.extend(['', '### Assertions'])
