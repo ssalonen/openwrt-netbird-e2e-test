@@ -10,7 +10,7 @@ SOCKET = sys.argv[1]
 LOG = Path(sys.argv[2])
 MOUNT = b"mkdir -p /mnt/e2e; mount -t 9p -o trans=virtio,ro netbirdcfg /mnt/e2e && echo E2E-MOUNT-OK\r\n"
 COMMAND = b"sh /mnt/e2e/guest-e2e.sh\r\n"
-PROMPT = re.compile(rb"root@[^\r\n:]+:~# ")
+PROMPT = re.compile(rb"root@[^\r\n:]+:~# ?")
 
 
 def pump(sock, log, deadline, until, on_idle=None):
@@ -41,9 +41,9 @@ def main():
         sock.settimeout(1)
         sock.connect(SOCKET)
         # Initial Enter may arrive during boot; retry after an idle prompt.
-        sock.sendall(b"\r")
+        sock.sendall(b"\r\n")
         pump(sock, log, time.monotonic() + 120, lambda b: bool(PROMPT.search(b)),
-             on_idle=lambda: sock.sendall(b"\r"))
+             on_idle=lambda: sock.sendall(b"\r\n"))
         time.sleep(3)
         sock.sendall(MOUNT)
         pump(sock, log, time.monotonic() + 60,
