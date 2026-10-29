@@ -23,11 +23,11 @@ server_ip=$(ip route get 1.1.1.1 | awk '{for(i=1;i<=NF;i++) if ($i=="src") {prin
 [[ "$server_ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]
 NETBIRD_URL="http://$server_ip" fixtures/upstream/bootstrap.sh "$work/state"
 mkdir -m 700 "$work/reference-data"
-docker run -d --rm --name "$peer" --hostname "$peer" \
+docker run -d --name "$peer" --hostname "$peer" \
   --network host --privileged --device /dev/net/tun \
   --mount "type=bind,src=$work/state/setup-key,dst=/run/secrets/netbird-setup-key,readonly" \
   --mount "type=bind,src=$work/reference-data,dst=/var/lib/netbird" \
-  -e NB_SETUP_KEY=file:/run/secrets/netbird-setup-key \
+  -e NB_SETUP_KEY_FILE=/run/secrets/netbird-setup-key \
   -e NB_MANAGEMENT_URL="http://$server_ip" \
   netbirdio/netbird:0.81.4 >/dev/null
 status=''
