@@ -18,5 +18,21 @@ class BuildResultTests(unittest.TestCase):
         self.assertEqual(result.summarize('build terminated'), 'build failed; see build job log')
 
 
+    def test_failure_preserves_pr_and_toolchain_provenance(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'version.buildinfo').write_text('r37901-2777161847\n')
+            (root / 'sdk.metadata').write_text('openwrt-sdk-x86-64.Linux-x86_64.tar.zst ' + 'a' * 64 + '\n')
+            (root / 'imagebuilder.metadata').write_text('openwrt-imagebuilder-x86-64.Linux-x86_64.tar.zst ' + 'b' * 64 + '\n')
+            data = result.record('x86_64', 'failure', 'libubus20261028 (no such package)', root,
+                                 30896, 'c' * 40, 'master', 'snapshot')
+            self.assertEqual(data['pr_commit'], 'c' * 40)
+            self.assertEqual(data['sdk']['sha256'], 'a' * 64)
+            self.assertEqual(data['imagebuilder']['filename'], 'openwrt-imagebuilder-x86-64.Linux-x86_64.tar.zst')
+            self.assertEqual(data['firmware_version'], 'r37901-2777161847')
+            self.assertIsNone(data['guest_image'])
+
+
 if __name__ == '__main__':
     unittest.main()

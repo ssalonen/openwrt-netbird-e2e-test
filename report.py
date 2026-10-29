@@ -80,7 +80,18 @@ def aggregate(args):
             verdicts.append(json.loads(verdict.read_text()))
         else:
             detail = str(build.get('detail', 'test report missing (build or E2E did not run)')).replace('\n', ' ')[:300]
-            sections.append(f'## {arch}\n\n**Overall: FAIL** — {detail}\n')
+            lines = [f'## {arch}', '', f'**Overall: FAIL** — {detail}']
+            if build:
+                lines.extend([f"- PR #{build.get('pr_number', 'unknown')} → `{build.get('base_branch', 'unknown')}`",
+                              f"- PR commit: `{build.get('pr_commit', 'unknown')}`",
+                              f"- Guest firmware version: `{build.get('firmware_version') or 'unavailable'}`"])
+                for kind, label in (('sdk', 'SDK'), ('imagebuilder', 'ImageBuilder')):
+                    tool = build.get(kind)
+                    if tool:
+                        lines.extend([f"- {label}: [{tool['filename']}]({tool['url']})",
+                                      f"- {label} SHA-256: `{tool['sha256']}`"])
+                lines.append('- Guest image: not built')
+            sections.append('\n'.join(lines) + '\n')
     passed = (len(verdicts) == 2 and all(v['passed'] for v in verdicts) and
               len({v['pr_commit'] for v in verdicts}) == 1 and
               {v['arch'] for v in verdicts} == {'x86_64', 'arm64'})

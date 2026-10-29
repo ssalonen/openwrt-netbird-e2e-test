@@ -74,10 +74,18 @@ class ReportTests(unittest.TestCase):
             source = Path(tmp)
             destination = source / 'combined.md'
             (source / 'build-result-x86_64.json').write_text(
-                '{"arch":"x86_64","status":"failure","detail":"libubus20261028 (no such package)"}')
+                '{"arch":"x86_64","status":"failure","detail":"libubus20261028 (no such package)",'
+                '"pr_number":30896,"pr_commit":"' + 'a' * 40 + '","base_branch":"master",'
+                '"firmware_version":"r37901-2777161847","sdk":{"filename":"sdk.tar.zst",'
+                '"sha256":"' + 'b' * 64 + '","url":"https://example.invalid/sdk"},'
+                '"imagebuilder":{"filename":"ib.tar.zst","sha256":"' + 'c' * 64 + '",'
+                '"url":"https://example.invalid/ib"},"guest_image":null}')
             with self.assertRaises(SystemExit):
                 report.aggregate((source, destination))
-            self.assertIn('libubus20261028 (no such package)', destination.read_text())
+            text = destination.read_text()
+            for detail in ('libubus20261028 (no such package)', 'PR #30896', 'a' * 40,
+                           'sdk.tar.zst', 'b' * 64, 'ib.tar.zst', 'c' * 64, 'image: not built'):
+                self.assertIn(detail, text)
 
 
 if __name__ == '__main__':

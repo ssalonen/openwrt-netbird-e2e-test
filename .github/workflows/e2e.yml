@@ -65,6 +65,10 @@ jobs:
         if: always()
         env:
           BUILD_OUTCOME: ${{ steps.build.outcome }}
+          PR_NUMBER: ${{ needs.prepare.outputs.pr_number }}
+          PR_COMMIT: ${{ needs.prepare.outputs.head_sha }}
+          BASE_BRANCH: ${{ needs.prepare.outputs.base_branch }}
+          OPENWRT_RELEASE: ${{ needs.prepare.outputs.release }}
         run: python3 build-result.py '${{ matrix.arch }}' "$BUILD_OUTCOME" "$RUNNER_TEMP/build.log" "$RUNNER_TEMP/build-result-${{ matrix.arch }}.json"
       - uses: actions/upload-artifact@v6
         if: always()
