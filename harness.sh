@@ -84,7 +84,9 @@ run)
     ! ip netns list | awk '{print $1}' | grep -Fxq "$ns" || { echo "namespace exists: $ns" >&2; exit 1; }
     docker inspect -f '{{.State.Running}}' "$PEER_CONTAINER" | grep -Fx true >/dev/null
 
-    overlay_nonce="$(openssl rand -hex 24)"
+    p2p_nonce="$(openssl rand -hex 24)"
+    relay_nonce="$(openssl rand -hex 24)"
+    [[ "$p2p_nonce" != "$relay_nonce" ]]
     forwarding_before="$(sysctl -n net.ipv4.ip_forward)"
     sysctl -w net.ipv4.ip_forward=1 >/dev/null
     nat_comment="openwrt-netbird-e2e-$run_id"
@@ -103,7 +105,9 @@ run)
     trap cleanup EXIT
     mkdir -p "$state"
     gzip -dc "$IMAGE" > "$state/disk.img"
-    printf '%s\n' "$overlay_nonce" > "$state/overlay-nonce"
+    cp "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)/guest-e2e.sh" "$state/guest-e2e.sh"
+    printf '%s\n' "$p2p_nonce" > "$state/p2p-nonce"
+    printf '%s\n' "$relay_nonce" > "$state/relay-nonce"
     docker run -d --rm --name "$payload" --network "container:$PEER_CONTAINER" \
         --mount "type=bind,src=$state,dst=/payload,readonly" python:3.12-alpine \
         python3 -m http.server "$PEER_PAYLOAD_PORT" --bind 0.0.0.0 --directory /payload >/dev/null
@@ -133,6 +137,12 @@ run)
         -netdev tap,id=n0,ifname="$tap",script=no,downscript=no \
         -device virtio-net-pci,netdev=n0 \
         -fw_cfg name=opt/netbird/setup-key,string="$NB_SETUP_KEY" \
+        -fw_cfg name=opt/netbird/guest-script,file="$state/guest-e2e.sh" \
+        -fw_cfg name=opt/netbird/management-url,string="$NB_MANAGEMENT_URL" \
+        -fw_cfg name=opt/netbird/peer-ip,string="$PEER_OVERLAY_IP" \
+        -fw_cfg name=opt/netbird/payload-port,string="$PEER_PAYLOAD_PORT" \
+        -fw_cfg name=opt/netbird/p2p-nonce,string="$p2p_nonce" \
+        -fw_cfg name=opt/netbird/relay-nonce,string="$relay_nonce" \
         -fw_cfg name=opt/netbird/ca-cert,file="$NB_CA_CERT" \
         -chardev socket,id=s0,path="$state/serial.sock",server=on,wait=off \
         -serial chardev:s0 -pidfile "$state/qemu.pid" -daemonize
@@ -143,12 +153,12 @@ run)
         printf '\n'
         sleep 2
         # shellcheck disable=SC2016 # Deliberately emitted for expansion by the guest shell.
-        printf 'set -e; ip addr flush dev br-lan; ip addr add 192.0.2.10/24 dev br-lan; ip link set br-lan up; ip route replace default via 192.0.2.1; mkdir -p /etc/ssl/certs; cat /sys/firmware/qemu_fw_cfg/by_name/opt/netbird/ca-cert/raw > /etc/ssl/certs/netbird-e2e-ca.pem; setup_key=$(cat /sys/firmware/qemu_fw_cfg/by_name/opt/netbird/setup-key/raw); /etc/init.d/netbird start; netbird up --setup-key "$setup_key" --management-url "%s"; unset setup_key; for i in $(seq 1 30); do netbird status -d | grep -F "Connection type: P2P" && break; sleep 2; done; netbird status -d | grep -F "Connection type: P2P"; wget -qO- "http://%s:%s/overlay-nonce" | grep -Fx "%s"; echo P2P-OVERLAY-PASS; /etc/init.d/netbird stop; NB_FORCE_RELAY=true /usr/bin/netbird service run >/tmp/netbird-relay.log 2>&1 & for i in $(seq 1 30); do netbird status -d | grep -F "Connection type: Relayed" && break; sleep 2; done; netbird status -d | grep -F "Connection type: Relayed"; wget -qO- "http://%s:%s/overlay-nonce" | grep -Fx "%s"; echo RELAY-OVERLAY-PASS\n' "$NB_MANAGEMENT_URL" "$PEER_OVERLAY_IP" "$PEER_PAYLOAD_PORT" "$overlay_nonce" "$PEER_OVERLAY_IP" "$PEER_PAYLOAD_PORT" "$overlay_nonce"
+        printf 'sh /sys/firmware/qemu_fw_cfg/by_name/opt/netbird/guest-script/raw\n'
         sleep 180
     } | timeout 240 nc -U "$state/serial.sock" > "$state/console.log" 2>&1 || true
     tr -d '\r' < "$state/console.log" > "$state/console.normalized"
     if ! grep -Fxq 'RELAY-OVERLAY-PASS' "$state/console.normalized"; then
-        sed -n '/set -e; ip addr flush/,$p' "$state/console.normalized" | tail -100 >&2
+        tail -100 "$state/console.normalized" >&2
     fi
     grep -F 'Connection type: P2P' "$state/console.normalized"
     grep -F 'Connection type: Relayed' "$state/console.normalized"

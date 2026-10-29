@@ -59,11 +59,13 @@ def test_runtime_requires_explicit_enrollment_and_payload_inputs():
 def test_runtime_has_separate_p2p_and_relay_assertions():
     text = HARNESS.read_text()
     runtime = text.split('run)', 1)[1].rsplit('\n*)', 1)[0]
+    guest = HARNESS.with_name('guest-e2e.sh').read_text()
     assert 'Connection type: P2P' in runtime
     assert 'Connection type: Relayed' in runtime
-    assert 'NB_FORCE_RELAY=true' in runtime
-    assert 'netbird up --setup-key' in runtime
-    assert 'overlay-nonce' in runtime
+    assert 'NB_FORCE_RELAY=true' in guest
+    assert 'netbird up --setup-key' in guest
+    assert 'p2p-nonce' in guest and 'relay-nonce' in guest
+    assert 'guest-script/raw' in runtime
 
 
 if __name__ == '__main__':
