@@ -41,11 +41,13 @@ fetch_nonce() {
     actual=$(wget -T 5 -qO- "http://$peer_ip:$port/$path" 2>/tmp/e2e-wget-error || true)
     if [ "$actual" = "$expected" ]; then return 0; fi
     n=$((n + 1))
+    if [ $((n % 5)) -eq 0 ]; then echo "waiting for $path overlay data (attempt $n)"; fi
     sleep 2
   done
   echo "FAIL: overlay $path payload did not match" >&2
   cat /tmp/e2e-wget-error >&2
   netbird status -d >&2 || true
+  if [ "$path" = relay-nonce ]; then cat /tmp/netbird-relay.log >&2 || true; fi
   return 1
 }
 fetch_nonce p2p-nonce "$p2p_nonce"

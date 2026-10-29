@@ -8,7 +8,8 @@ from pathlib import Path
 
 SOCKET = sys.argv[1]
 LOG = Path(sys.argv[2])
-COMMAND = b"mkdir -p /mnt/e2e; mount -t 9p -o trans=virtio,ro netbirdcfg /mnt/e2e && sh /mnt/e2e/guest-e2e.sh\r"
+MOUNT = b"mkdir -p /mnt/e2e; mount -t 9p -o trans=virtio,ro netbirdcfg /mnt/e2e && echo E2E-MOUNT-OK\r\n"
+COMMAND = b"sh /mnt/e2e/guest-e2e.sh\r\n"
 PROMPT = re.compile(rb"root@[^\r\n:]+:~# ")
 
 
@@ -44,8 +45,11 @@ def main():
         pump(sock, log, time.monotonic() + 120, lambda b: bool(PROMPT.search(b)),
              on_idle=lambda: sock.sendall(b"\r"))
         time.sleep(3)
+        sock.sendall(MOUNT)
+        pump(sock, log, time.monotonic() + 60,
+             lambda b: bool(re.search(rb"(?:\r?\n)E2E-MOUNT-OK\r?\n", b)))
         sock.sendall(COMMAND)
-        recent = pump(sock, log, time.monotonic() + 240,
+        recent = pump(sock, log, time.monotonic() + 420,
                       lambda b: b"RELAY-OVERLAY-PASS" in b)
         if b"RELAY-OVERLAY-PASS" not in recent:
             raise RuntimeError("guest command returned without relay success")

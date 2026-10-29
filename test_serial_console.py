@@ -24,10 +24,13 @@ def test_short_guest_command_waits_for_prompt():
                 conn.settimeout(10)
                 conn.recv(1024)
                 conn.sendall(b"booting...\r\nroot@(none):~# ")
+                mount_command = conn.recv(4096)
+                assert mount_command.startswith(b"mkdir -p /mnt/e2e;")
+                assert mount_command.endswith(b"\r\n")
+                assert b"setup-key" not in mount_command
+                conn.sendall(b"\r\nE2E-MOUNT-OK\r\n")
                 command = conn.recv(4096)
-                assert command.startswith(b"mkdir -p /mnt/e2e;")
-                assert command.endswith(b"\r")
-                assert b"setup-key" not in command
+                assert command == b"sh /mnt/e2e/guest-e2e.sh\r\n"
                 conn.sendall(b"\r\nConnection type: P2P\r\nP2P-OVERLAY-PASS\r\n")
                 conn.sendall(b"Connection type: Relayed\r\nRELAY-OVERLAY-PASS\r\n")
             _, err = proc.communicate(timeout=10)
