@@ -36,12 +36,18 @@ def record(work, output, base, release, arch, pr_commit, pr_number, resolve_comm
     apk_hash = (output / 'netbird.apk.sha256').read_text().split()[0]
     if not re.fullmatch(r'[a-f0-9]{64}', apk_hash):
         raise ValueError('invalid package checksum')
-    return {'arch': arch, 'pr_number': pr_number, 'pr_commit': pr_commit,
-            'openwrt_release': release, 'firmware_version': version,
-            'firmware_commit': commit, 'target_url': base,
-            'sdk': tool('sdk'), 'imagebuilder': tool('imagebuilder'),
-            'netbird_apk_sha256': apk_hash,
-            'guest_image': {'filename': 'guest.img.gz', 'sha256': digest(output / 'guest.img.gz')}}
+    result = {'arch': arch, 'pr_number': pr_number, 'pr_commit': pr_commit,
+              'openwrt_release': release, 'firmware_version': version,
+              'firmware_commit': commit, 'target_url': base,
+              'sdk': tool('sdk'), 'imagebuilder': tool('imagebuilder'),
+              'netbird_apk_sha256': apk_hash,
+              'guest_image': {'filename': 'guest.img.gz', 'sha256': digest(output / 'guest.img.gz')}}
+    if (output / 'libubus.apk.sha256').is_file():
+        libubus_hash = (output / 'libubus.apk.sha256').read_text().split()[0]
+        if not re.fullmatch(r'[a-f0-9]{64}', libubus_hash):
+            raise ValueError('invalid libubus checksum')
+        result['libubus_apk_sha256'] = libubus_hash
+    return result
 
 
 def resolve_commit(short):

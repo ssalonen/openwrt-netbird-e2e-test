@@ -18,6 +18,7 @@ class ProvenanceTests(unittest.TestCase):
             (root / 'sdk.metadata').write_text('openwrt-sdk-x86-64.Linux-x86_64.tar.zst ' + 'a' * 64 + '\n')
             (root / 'imagebuilder.metadata').write_text('openwrt-imagebuilder-x86-64.Linux-x86_64.tar.zst ' + 'b' * 64 + '\n')
             (root / 'netbird.apk.sha256').write_text('c' * 64 + '  /private/sdk/netbird.apk\n')
+            (root / 'libubus.apk.sha256').write_text('f' * 64 + '  /private/sdk/libubus.apk\n')
             (root / 'guest.img.gz').write_bytes(b'image bytes')
             result = provenance.record(root, root, 'https://downloads.openwrt.org/snapshots/targets/x86/64',
                                        'snapshot', 'x86_64', 'a' * 40, 30896,
@@ -27,6 +28,7 @@ class ProvenanceTests(unittest.TestCase):
             self.assertEqual(result['imagebuilder']['sha256'], 'b' * 64)
             self.assertEqual(result['guest_image']['sha256'], provenance.digest(root / 'guest.img.gz'))
             self.assertEqual(result['pr_commit'], 'a' * 40)
+            self.assertEqual(result['libubus_apk_sha256'], 'f' * 64)
 
     def test_rejects_mismatched_firmware_commit(self):
         with tempfile.TemporaryDirectory() as tmp:
