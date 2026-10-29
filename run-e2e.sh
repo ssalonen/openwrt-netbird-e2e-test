@@ -8,7 +8,8 @@ image=${2:?guest image required}
 test -s "$image"
 [[ ${EUID} -eq 0 ]] || { echo 'run as root' >&2; exit 1; }
 run_id="e2e${GITHUB_RUN_ID: -6}"
-work="${RUNNER_TEMP:-/tmp}/nbfixture-${GITHUB_RUN_ID:-local}-${arch}"
+fixture_arch=${arch/_/-}
+work="${RUNNER_TEMP:-/tmp}/nbfixture-${GITHUB_RUN_ID:-local}-${fixture_arch}"
 peer="nbref-$run_id"
 cleanup() {
   set +e
