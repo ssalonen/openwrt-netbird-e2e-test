@@ -68,5 +68,17 @@ class ReportTests(unittest.TestCase):
             self.assertIn('Both architectures: FAIL', destination.read_text())
 
 
+    def test_failed_build_is_explained_in_combined_report(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp)
+            destination = source / 'combined.md'
+            (source / 'build-result-x86_64.json').write_text(
+                '{"arch":"x86_64","status":"failure","detail":"libubus20261028 (no such package)"}')
+            with self.assertRaises(SystemExit):
+                report.aggregate((source, destination))
+            self.assertIn('libubus20261028 (no such package)', destination.read_text())
+
+
 if __name__ == '__main__':
     unittest.main()

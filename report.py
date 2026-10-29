@@ -74,11 +74,13 @@ def aggregate(args):
     for arch in ('x86_64', 'arm64'):
         report = source / f'test-report-{arch}.md'
         verdict = source / f'test-report-{arch}.json'
+        build = read_optional(source / f'build-result-{arch}.json')
         if report.is_file() and verdict.is_file():
             sections.append(report.read_text())
             verdicts.append(json.loads(verdict.read_text()))
         else:
-            sections.append(f'## {arch}\n\n**Overall: FAIL** — report missing\n')
+            detail = str(build.get('detail', 'test report missing (build or E2E did not run)')).replace('\n', ' ')[:300]
+            sections.append(f'## {arch}\n\n**Overall: FAIL** — {detail}\n')
     passed = (len(verdicts) == 2 and all(v['passed'] for v in verdicts) and
               len({v['pr_commit'] for v in verdicts}) == 1 and
               {v['arch'] for v in verdicts} == {'x86_64', 'arm64'})

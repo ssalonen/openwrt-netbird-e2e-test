@@ -34,5 +34,12 @@ class BuildMatrixTests(unittest.TestCase):
         self.assertIn('Human-readable E2E report', workflow)
 
 
+    def test_untrusted_pr_build_receives_no_github_token(self):
+        workflow = WORKFLOW.read_text()
+        build = workflow.split('  build-image:', 1)[1].split('  e2e:', 1)[0]
+        self.assertNotIn('GITHUB_TOKEN:', build)
+        self.assertIn('persist-credentials: false', build)
+
+
 if __name__ == '__main__':
     unittest.main()

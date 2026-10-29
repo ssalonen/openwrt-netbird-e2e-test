@@ -44,21 +44,35 @@ jobs:
         arch: [x86_64, arm64]
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
       - name: Install build dependencies
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y zstd rsync file git curl build-essential python3
       - name: Cross-build PR NetBird APK and bake matching OpenWrt image
+        id: build
         env:
           PR_NUMBER: ${{ needs.prepare.outputs.pr_number }}
           PACKAGES_REF: ${{ needs.prepare.outputs.head_sha }}
           OPENWRT_RELEASE: ${{ needs.prepare.outputs.release }}
-          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          ./build-image.sh '${{ matrix.arch }}' "$RUNNER_TEMP/image"
+          ./build-image.sh '${{ matrix.arch }}' "$RUNNER_TEMP/image" 2>&1 | tee "$RUNNER_TEMP/build.log"
           cp "$RUNNER_TEMP/image/guest.img.gz" "$RUNNER_TEMP/image/guest-${{ matrix.arch }}.img.gz"
           (cd "$RUNNER_TEMP/image" && sha256sum "guest-${{ matrix.arch }}.img.gz" > "guest-${{ matrix.arch }}.sha256")
+      - name: Record build verdict
+        if: always()
+        env:
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
+        run: python3 build-result.py '${{ matrix.arch }}' "$BUILD_OUTCOME" "$RUNNER_TEMP/build.log" "$RUNNER_TEMP/build-result-${{ matrix.arch }}.json"
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: build-result-${{ matrix.arch }}
+          path: ${{ runner.temp }}/build-result-${{ matrix.arch }}.json
+          if-no-files-found: error
+          retention-days: 14
       - uses: actions/upload-artifact@v6
         with:
           name: openwrt-guest-${{ matrix.arch }}
@@ -130,6 +144,12 @@ jobs:
     runs-on: avrea-ubuntu-latest-4-vcpu
     steps:
       - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v7
+        continue-on-error: true
+        with:
+          pattern: build-result-*
+          path: ${{ runner.temp }}/reports
+          merge-multiple: true
       - uses: actions/download-artifact@v7
         continue-on-error: true
         with:
