@@ -71,7 +71,7 @@ run)
     [[ "$PEER_CONTAINER" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]] || { echo "PEER_CONTAINER has invalid characters" >&2; exit 2; }
     [[ "$PEER_PAYLOAD_PORT" =~ ^[0-9]{2,5}$ ]] || { echo "PEER_PAYLOAD_PORT must be numeric" >&2; exit 2; }
     [[ "${EUID}" -eq 0 ]] || { echo "run mode must execute as root" >&2; exit 1; }
-    for command in ip docker gzip nc openssl iptables sysctl mkfs.ext4; do need "$command"; done
+    for command in ip docker gzip openssl iptables sysctl; do need "$command"; done
     case "$GUEST_ARCH" in
       x86_64) qemu='qemu-system-x86_64'; qemu_args=(-enable-kvm) ;;
       arm64) qemu='qemu-system-aarch64'; qemu_args=(-machine 'virt,accel=kvm' -cpu host -bios /usr/share/AAVMF/AAVMF_CODE.fd) ;;
@@ -112,7 +112,6 @@ run)
     printf '%s\n' "$PEER_PAYLOAD_PORT" > "$state/config/payload-port"
     printf '%s\n' "$p2p_nonce" > "$state/config/p2p-nonce"
     printf '%s\n' "$relay_nonce" > "$state/config/relay-nonce"
-    mkfs.ext4 -q -F -d "$state/config" "$state/config.img" 16M
     printf '%s\n' "$p2p_nonce" > "$state/p2p-nonce"
     printf '%s\n' "$relay_nonce" > "$state/relay-nonce"
     docker run -d --rm --name "$payload" --network "container:$PEER_CONTAINER" \
@@ -138,10 +137,11 @@ run)
     iptables -A FORWARD -o "$gateway" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 
     # Only one guest NIC: the namespace TAP interface. Secrets are on a
-    # temporary read-only virtio disk, not on the serial console or QEMU argv.
+    # temporary read-only 9p share, not on the serial console or QEMU argv.
     ip netns exec "$ns" "$qemu" "${qemu_args[@]}" -display none -m 1024 \
         -drive file="$state/disk.img",format=raw,if=virtio \
-        -drive file="$state/config.img",format=raw,if=virtio,readonly=on \
+        -fsdev local,id=e2e,path="$state/config",security_model=none,readonly=on \
+        -device virtio-9p-pci,fsdev=e2e,mount_tag=netbirdcfg \
         -netdev tap,id=n0,ifname="$tap",script=no,downscript=no \
         -device virtio-net-pci,netdev=n0 \
         -chardev socket,id=s0,path="$state/serial.sock",server=on,wait=off \

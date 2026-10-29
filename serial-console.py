@@ -8,7 +8,7 @@ from pathlib import Path
 
 SOCKET = sys.argv[1]
 LOG = Path(sys.argv[2])
-COMMAND = b"mkdir -p /mnt/e2e; mount -t ext4 -o ro /dev/vdb /mnt/e2e && sh /mnt/e2e/guest-e2e.sh\n"
+COMMAND = b"mkdir -p /mnt/e2e; mount -t 9p -o trans=virtio,ro netbirdcfg /mnt/e2e && sh /mnt/e2e/guest-e2e.sh\n"
 PROMPT = re.compile(rb"root@[^\r\n:]+:~# ")
 
 

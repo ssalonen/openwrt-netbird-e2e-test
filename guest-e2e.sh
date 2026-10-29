@@ -1,5 +1,5 @@
 #!/bin/sh
-# Executed from a read-only disposable ext4 config disk, never typed over serial.
+# Executed from a read-only disposable 9p share, never typed over serial.
 set -eu
 fw=/mnt/e2e
 read_cfg() { cat "$fw/$1"; }

@@ -56,13 +56,13 @@ def test_runtime_requires_explicit_enrollment_and_payload_inputs():
         assert required in runtime
 
 
-def test_runtime_uses_ephemeral_readonly_config_disk_not_guest_fw_cfg_sysfs():
+def test_runtime_uses_ephemeral_readonly_9p_share_not_guest_fw_cfg_sysfs():
     runtime = HARNESS.read_text().split('run)', 1)[1].rsplit('\n*)', 1)[0]
     guest = HARNESS.with_name('guest-e2e.sh').read_text()
     serial = HARNESS.with_name('serial-console.py').read_text()
-    assert 'mkfs.ext4' in runtime
+    assert '-fsdev local' in runtime
     assert 'readonly=on' in runtime
-    assert '/dev/vdb' in serial
+    assert 'mount -t 9p' in serial
     assert 'qemu_fw_cfg' not in guest
     assert '/mnt/e2e/setup-key' in guest
 
@@ -87,6 +87,6 @@ if __name__ == '__main__':
     test_runtime_mode_has_no_user_nat_netdev()
     test_runtime_mode_normalizes_serial_crlf_before_assertions()
     test_runtime_requires_explicit_enrollment_and_payload_inputs()
-    test_runtime_uses_ephemeral_readonly_config_disk_not_guest_fw_cfg_sysfs()
+    test_runtime_uses_ephemeral_readonly_9p_share_not_guest_fw_cfg_sysfs()
     test_runtime_has_separate_p2p_and_relay_assertions()
     print('PASS: QEMU NetBird harness contract')
