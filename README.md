@@ -25,4 +25,4 @@ bash -n build-image.sh run-e2e.sh harness.sh verify-cleanup.sh fixtures/upstream
 shellcheck build-image.sh run-e2e.sh harness.sh verify-cleanup.sh guest-e2e.sh fixtures/upstream/*.sh
 ```
 
-`build-image.sh x86_64|arm64 OUTPUT_DIR` requires an x86_64 Linux host and the official OpenWrt release downloads. `run-e2e.sh x86_64|arm64 IMAGE` requires a disposable root-capable host with Docker, KVM, TUN and the architecture's QEMU binary. Use the GitHub workflow for the complete integration gate.
+`build-image.sh x86_64|arm64 OUTPUT_DIR` requires an x86_64 Linux host and the official OpenWrt release downloads. `run-e2e.sh x86_64|arm64 IMAGE` requires a disposable root-capable host with Docker, TUN and the architecture's QEMU binary. The x86 guest uses KVM; the ARM guest currently uses TCG on Avrea because its nested ARM KVM run reproducibly stalled in the guest kernel's RCU path. Use the GitHub workflow for the complete integration gate.

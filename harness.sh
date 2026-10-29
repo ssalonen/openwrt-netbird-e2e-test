@@ -73,8 +73,8 @@ run)
     [[ "${EUID}" -eq 0 ]] || { echo "run mode must execute as root" >&2; exit 1; }
     for command in ip docker gzip openssl iptables sysctl; do need "$command"; done
     case "$GUEST_ARCH" in
-      x86_64) qemu='qemu-system-x86_64'; qemu_args=(-enable-kvm) ;;
-      arm64) qemu='qemu-system-aarch64'; qemu_args=(-machine 'virt,accel=kvm' -cpu host -bios /usr/share/AAVMF/AAVMF_CODE.fd) ;;
+      x86_64) qemu='qemu-system-x86_64'; qemu_args=(-enable-kvm); smp=2 ;;
+      arm64) qemu='qemu-system-aarch64'; qemu_args=(-machine 'virt,accel=tcg' -cpu cortex-a53 -bios /usr/share/AAVMF/AAVMF_CODE.fd); smp=1 ;;
       *) echo 'GUEST_ARCH must be x86_64 or arm64' >&2; exit 2 ;;
     esac
     need "$qemu"
@@ -138,7 +138,7 @@ run)
 
     # Only one guest NIC: the namespace TAP interface. Secrets are on a
     # temporary read-only 9p share, not on the serial console or QEMU argv.
-    ip netns exec "$ns" "$qemu" "${qemu_args[@]}" -display none -m 1024 -smp 2 \
+    ip netns exec "$ns" "$qemu" "${qemu_args[@]}" -display none -m 1024 -smp "$smp" \
         -device virtio-rng-pci \
         -drive file="$state/disk.img",format=raw,if=virtio \
         -fsdev local,id=e2e,path="$state/config",security_model=none,readonly=on \
