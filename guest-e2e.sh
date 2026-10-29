@@ -38,7 +38,7 @@ fetch_nonce() {
   path=$1 expected=$2
   n=0
   while [ "$n" -lt 30 ]; do
-    actual=$(wget -T 5 -qO- "http://$peer_ip:$port/$path" 2>/tmp/e2e-wget-error || true)
+    actual=$(timeout 8 wget -T 5 -qO- "http://$peer_ip:$port/$path" 2>/tmp/e2e-wget-error || true)
     if [ "$actual" = "$expected" ]; then return 0; fi
     n=$((n + 1))
     if [ $((n % 5)) -eq 0 ]; then echo "waiting for $path overlay data (attempt $n)"; fi
@@ -58,6 +58,8 @@ echo RELAY-STOP-BEGIN
 echo RELAY-STOP-DONE
 NB_FORCE_RELAY=true /usr/bin/netbird service run >/tmp/netbird-relay.log 2>&1 &
 echo RELAY-SERVICE-LAUNCHED
+sleep 2
+timeout 10 netbird status -d | grep -E 'Management:|Signal:|Relays:|Connection type:' || true
 fetch_nonce relay-nonce "$relay_nonce"
 await_connection Relayed
 echo RELAY-OVERLAY-PASS

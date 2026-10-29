@@ -67,7 +67,7 @@ apk="$ib/staging_dir/host/bin/apk"
 cp "$ib/repositories" "$ib/repositories.upstream"
 { printf 'file://%s/packages.adb\n' "$repo_dir"; cat "$ib/repositories.upstream"; } > "$ib/repositories"
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
-make -C "$ib" image PACKAGES='netbird wget kmod-wireguard kmod-tun kmod-fs-9p kmod-9pnet kmod-9pvirtio' FILES="$root/image-overlay"
+make -C "$ib" image PACKAGES='netbird wget coreutils-timeout kmod-wireguard kmod-tun kmod-fs-9p kmod-9pnet kmod-9pvirtio' FILES="$root/image-overlay"
 image=$(find "$ib/bin/targets" -type f -name "$pattern" -print -quit)
 test -s "$image"
 cp "$image" "$output/guest.img.gz"
