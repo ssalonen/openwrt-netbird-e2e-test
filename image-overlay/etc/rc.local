@@ -1,0 +1,19 @@
+#!/bin/sh
+# Disposable guest image: wait for the host's read-only 9p config share.
+# All credentials are delivered only at runtime via 9p; none is baked in.
+(
+  sleep 5
+  mkdir -p /mnt/e2e
+  n=0
+  while [ "$n" -lt 20 ]; do
+    if mount -t 9p -o trans=virtio,ro netbirdcfg /mnt/e2e; then
+      echo E2E-MOUNT-OK
+      sh /mnt/e2e/guest-e2e.sh
+      exit $?
+    fi
+    n=$((n + 1))
+    sleep 2
+  done
+  echo 'FAIL: guest could not mount NetBird E2E config share'
+) >/dev/console 2>&1 &
+exit 0

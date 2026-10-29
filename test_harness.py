@@ -59,12 +59,21 @@ def test_runtime_requires_explicit_enrollment_and_payload_inputs():
 def test_runtime_uses_ephemeral_readonly_9p_share_not_guest_fw_cfg_sysfs():
     runtime = HARNESS.read_text().split('run)', 1)[1].rsplit('\n*)', 1)[0]
     guest = HARNESS.with_name('guest-e2e.sh').read_text()
-    serial = HARNESS.with_name('serial-console.py').read_text()
+    boot = HARNESS.parent.joinpath('image-overlay/etc/rc.local').read_text()
     assert '-fsdev local' in runtime
     assert 'readonly=on' in runtime
-    assert 'mount -t 9p' in serial
+    assert 'mount -t 9p' in boot
     assert 'qemu_fw_cfg' not in guest
     assert '/mnt/e2e/setup-key' in guest
+
+
+def test_baked_guest_boots_9p_script_without_serial_input():
+    build = HARNESS.with_name('build-image.sh').read_text()
+    boot = HARNESS.parent.joinpath('image-overlay/etc/rc.local').read_text()
+    assert 'FILES=' in build
+    assert 'mount -t 9p' in boot
+    assert '/mnt/e2e/guest-e2e.sh' in boot
+    assert '/dev/console' in boot
 
 
 def test_runtime_has_separate_p2p_and_relay_assertions():
@@ -76,7 +85,7 @@ def test_runtime_has_separate_p2p_and_relay_assertions():
     assert 'NB_FORCE_RELAY=true' in guest
     assert 'netbird up --setup-key' in guest
     assert 'p2p-nonce' in guest and 'relay-nonce' in guest
-    assert '/mnt/e2e/guest-e2e.sh' in HARNESS.with_name('serial-console.py').read_text()
+    assert '/mnt/e2e/guest-e2e.sh' in HARNESS.parent.joinpath('image-overlay/etc/rc.local').read_text()
 
 
 if __name__ == '__main__':
@@ -88,5 +97,6 @@ if __name__ == '__main__':
     test_runtime_mode_normalizes_serial_crlf_before_assertions()
     test_runtime_requires_explicit_enrollment_and_payload_inputs()
     test_runtime_uses_ephemeral_readonly_9p_share_not_guest_fw_cfg_sysfs()
+    test_baked_guest_boots_9p_script_without_serial_input()
     test_runtime_has_separate_p2p_and_relay_assertions()
     print('PASS: QEMU NetBird harness contract')

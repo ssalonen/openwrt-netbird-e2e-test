@@ -15,6 +15,7 @@ if ip netns list | awk '{print $1}' | grep -Fxq "$ns"; then leak namespace; fi
 if ip link show "gw-$run_id" >/dev/null 2>&1; then leak host_gateway; fi
 if ip link show br0 >/dev/null 2>&1; then leak host_bridge; fi
 if ip link show tap0 >/dev/null 2>&1; then leak host_tap; fi
+if ip link show wt0 >/dev/null 2>&1; then leak reference_tunnel; fi
 if docker ps -a --format '{{.Names}}' | grep -Fxq "$peer"; then leak reference_peer; fi
 if docker ps -a --format '{{.Names}}' | grep -Fxq "nbpayload-$run_id"; then leak payload_server; fi
 if docker ps -aq --filter "label=com.docker.compose.project=nbfixture-${GITHUB_RUN_ID:-local}-${fixture_arch}" | grep -q .; then leak fixture_containers; fi

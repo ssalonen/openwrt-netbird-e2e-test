@@ -53,8 +53,11 @@ fetch_nonce() {
 fetch_nonce p2p-nonce "$p2p_nonce"
 await_connection P2P
 echo P2P-OVERLAY-PASS
+echo RELAY-STOP-BEGIN
 /etc/init.d/netbird stop
+echo RELAY-STOP-DONE
 NB_FORCE_RELAY=true /usr/bin/netbird service run >/tmp/netbird-relay.log 2>&1 &
+echo RELAY-SERVICE-LAUNCHED
 fetch_nonce relay-nonce "$relay_nonce"
 await_connection Relayed
 echo RELAY-OVERLAY-PASS
