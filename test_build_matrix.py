@@ -27,5 +27,12 @@ class BuildMatrixTests(unittest.TestCase):
         self.assertNotIn('packages_ref:', workflow)
 
 
+    def test_all_jobs_use_avrea_runners(self):
+        workflow = WORKFLOW.read_text()
+        self.assertNotIn('runs-on: ubuntu-latest', workflow)
+        self.assertIn('Resolve and validate NetBird PR', workflow)
+        self.assertIn('Human-readable E2E report', workflow)
+
+
 if __name__ == '__main__':
     unittest.main()

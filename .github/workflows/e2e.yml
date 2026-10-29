@@ -13,7 +13,7 @@ permissions:
 jobs:
   prepare:
     name: Resolve and validate NetBird PR
-    runs-on: ubuntu-latest
+    runs-on: avrea-ubuntu-latest-4-vcpu
     outputs:
       pr_number: ${{ steps.pr.outputs.pr_number }}
       head_sha: ${{ steps.pr.outputs.head_sha }}
@@ -127,7 +127,7 @@ jobs:
     name: Human-readable E2E report
     needs: [prepare, build-image, e2e]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: avrea-ubuntu-latest-4-vcpu
     steps:
       - uses: actions/checkout@v5
       - uses: actions/download-artifact@v7
