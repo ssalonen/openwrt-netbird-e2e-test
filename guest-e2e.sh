@@ -54,12 +54,26 @@ fetch_nonce p2p-nonce "$p2p_nonce"
 await_connection P2P
 echo P2P-OVERLAY-PASS
 echo RELAY-STOP-BEGIN
+timeout 20 netbird down
 /etc/init.d/netbird stop
+rm -f /var/run/netbird.sock
 echo RELAY-STOP-DONE
-NB_FORCE_RELAY=true /usr/bin/netbird service run >/tmp/netbird-relay.log 2>&1 &
+NB_STATE_DIR=/root/.config/netbird NB_DISABLE_SSH_CONFIG=1 \
+  NB_DNS_STATE_FILE=/var/lib/netbird/state.json NB_FORCE_RELAY=true \
+  /usr/bin/netbird service run >/tmp/netbird-relay.log 2>&1 &
 echo RELAY-SERVICE-LAUNCHED
-sleep 2
-timeout 10 netbird status -d | grep -E 'Management:|Signal:|Relays:|Connection type:' || true
+n=0
+while [ "$n" -lt 20 ]; do
+  if timeout 3 netbird status --check live >/dev/null 2>&1; then break; fi
+  n=$((n + 1))
+  sleep 1
+done
+if ! timeout 3 netbird status --check live >/dev/null 2>&1; then
+  echo 'FAIL: forced-relay daemon did not start' >&2
+  tail -40 /tmp/netbird-relay.log >&2
+  exit 1
+fi
+netbird up --management-url "$url"
 fetch_nonce relay-nonce "$relay_nonce"
 await_connection Relayed
 echo RELAY-OVERLAY-PASS

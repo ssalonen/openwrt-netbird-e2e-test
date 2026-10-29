@@ -138,7 +138,8 @@ run)
 
     # Only one guest NIC: the namespace TAP interface. Secrets are on a
     # temporary read-only 9p share, not on the serial console or QEMU argv.
-    ip netns exec "$ns" "$qemu" "${qemu_args[@]}" -display none -m 1024 \
+    ip netns exec "$ns" "$qemu" "${qemu_args[@]}" -display none -m 1024 -smp 2 \
+        -device virtio-rng-pci \
         -drive file="$state/disk.img",format=raw,if=virtio \
         -fsdev local,id=e2e,path="$state/config",security_model=none,readonly=on \
         -device virtio-9p-pci,fsdev=e2e,mount_tag=netbirdcfg \

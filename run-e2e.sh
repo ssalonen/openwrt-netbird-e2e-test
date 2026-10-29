@@ -11,10 +11,19 @@ run_id="e2e${GITHUB_RUN_ID: -6}"
 fixture_arch=${arch/_/-}
 work="${RUNNER_TEMP:-/tmp}/nbfixture-${GITHUB_RUN_ID:-local}-${fixture_arch}"
 peer="nbref-$run_id"
+if ip link show wt0 >/dev/null 2>&1; then
+  echo 'refusing pre-existing host NetBird tunnel wt0' >&2
+  exit 1
+fi
+peer_created=0
 # shellcheck disable=SC2329 # Invoked by the EXIT trap.
 cleanup() {
   set +e
-  docker rm -f "$peer" >/dev/null 2>&1 || true
+  if [[ $peer_created -eq 1 ]]; then
+    docker exec "$peer" netbird down >/dev/null 2>&1 || true
+    docker rm -f "$peer" >/dev/null 2>&1 || true
+    ip link del wt0 >/dev/null 2>&1 || true
+  fi
   if test -f "$work/owner-marker"; then fixtures/upstream/stop.sh "$work"; fi
 }
 trap cleanup EXIT
@@ -24,6 +33,7 @@ server_ip=$(ip route get 1.1.1.1 | awk '{for(i=1;i<=NF;i++) if ($i=="src") {prin
 [[ "$server_ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]
 NETBIRD_URL="http://$server_ip" fixtures/upstream/bootstrap.sh "$work/state"
 mkdir -m 700 "$work/reference-data"
+peer_created=1
 docker run -d --name "$peer" --hostname "$peer" \
   --network host --privileged --device /dev/net/tun \
   --mount "type=bind,src=$work/state/setup-key,dst=/run/secrets/netbird-setup-key,readonly" \
