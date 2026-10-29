@@ -55,11 +55,9 @@ printf 'src-link packages %s\n' "$repo" > "$sdk/feeds.conf"
 if [[ "$release" == snapshot ]]; then
   firmware_commit=$(PYTHONPATH="$root" python3 -c 'from provenance import resolve_commit; import pathlib,sys; print(resolve_commit(pathlib.Path(sys.argv[1]).read_text().strip().rsplit("-",1)[-1]))' "$work/version.buildinfo")
   [[ "$firmware_commit" =~ ^[a-f0-9]{40}$ ]]
-  mkdir -p "$sdk/package/system/ubus" "$sdk/package/libs/libubox"
+  mkdir -p "$sdk/package/system/ubus"
   curl -fsSL --retry 3 "https://raw.githubusercontent.com/openwrt/openwrt/$firmware_commit/package/system/ubus/Makefile" \
     -o "$sdk/package/system/ubus/Makefile"
-  curl -fsSL --retry 3 "https://raw.githubusercontent.com/openwrt/openwrt/$firmware_commit/package/libs/libubox/Makefile" \
-    -o "$sdk/package/libs/libubox/Makefile"
 fi
 (
   cd "$sdk"
@@ -67,7 +65,6 @@ fi
   ./scripts/feeds install netbird
   make defconfig
   if [[ "$release" == snapshot ]]; then
-    make -j2 package/libs/libubox/compile V=sc
     make -j2 package/system/ubus/compile V=sc
   fi
   make -j2 package/feeds/packages/netbird/compile V=sc
