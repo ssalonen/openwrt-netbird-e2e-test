@@ -3,9 +3,12 @@
 set -euo pipefail
 arch=${1:?usage: build-image.sh x86_64|arm64 OUTPUT_DIR}
 output=${2:?output directory required}
-release=25.12.1
-packages_ref=${PACKAGES_REF:-8379ac12710eea0772da83066999ed44b82951b6}
+release=${OPENWRT_RELEASE:?set OPENWRT_RELEASE to snapshot or 25.12.1}
+pr_number=${PR_NUMBER:?set PR_NUMBER to the resolved PR number}
+packages_ref=${PACKAGES_REF:?set PACKAGES_REF to the resolved PR head SHA}
+[[ "$pr_number" =~ ^[1-9][0-9]{0,7}$ ]] || { echo 'invalid PR number' >&2; exit 2; }
 [[ "$packages_ref" =~ ^[a-f0-9]{40}$ ]] || { echo 'PACKAGES_REF must be a full commit SHA' >&2; exit 2; }
+[[ "$release" == snapshot || "$release" == 25.12.1 ]] || { echo 'unsupported OpenWrt release' >&2; exit 2; }
 case "$arch" in
   x86_64) target=x86/64; sdk_target=x86-64; pattern='*ext4-combined.img.gz' ;;
   arm64) target=armsr/armv8; sdk_target=armsr-armv8; pattern='*ext4-combined-efi.img.gz' ;;
@@ -19,17 +22,27 @@ mkdir -p "$work"
 repo="$work/packages"
 if [[ -e "$repo" ]]; then echo "refusing existing checkout: $repo" >&2; exit 1; fi
 git clone -q --filter=blob:none https://github.com/openwrt/packages.git "$repo"
-git -C "$repo" checkout -q --detach "$packages_ref"
+git -C "$repo" fetch -q --no-tags origin "refs/pull/$pr_number/head"
+[[ $(git -C "$repo" rev-parse FETCH_HEAD) == "$packages_ref" ]] || { echo 'PR head changed since resolution' >&2; exit 1; }
+git -C "$repo" checkout -q --detach FETCH_HEAD
 [[ $(git -C "$repo" rev-parse HEAD) == "$packages_ref" ]]
 grep -Fx 'PKG_VERSION:=0.81.4' "$repo/net/netbird/Makefile"
-base=https://downloads.openwrt.org/releases/$release/targets/$target
+if [[ "$release" == snapshot ]]; then
+  base="https://downloads.openwrt.org/snapshots/targets/$target"
+  prefix_release=''
+else
+  base="https://downloads.openwrt.org/releases/$release/targets/$target"
+  prefix_release="$release-"
+fi
+curl -fsSL "$base/version.buildinfo" -o "$work/version.buildinfo"
 curl -fsSL "$base/sha256sums" -o "$work/sha256sums"
 for kind in sdk imagebuilder; do
-  prefix="openwrt-$kind-$release-$sdk_target"
+  prefix="openwrt-$kind-$prefix_release$sdk_target"
   filename=$(curl -fsSL "$base/" | grep -oE "${prefix}"'[^"<>[:space:]]*Linux-x86_64[.]tar[.]zst' | sort -u | sed -n '1p')
   test -n "$filename"
   expected=$(awk -v n="*$filename" '$2==n {print $1}' "$work/sha256sums")
   test -n "$expected"
+  printf '%s %s\n' "$filename" "$expected" > "$work/$kind.metadata"
   curl -fsSL --retry 3 "$base/$filename" -o "$work/$filename"
   echo "$expected  $work/$filename" | sha256sum -c -
   tar --use-compress-program=unzstd -xf "$work/$filename" -C "$work"
@@ -72,4 +85,6 @@ image=$(find "$ib/bin/targets" -type f -name "$pattern" -print -quit)
 test -s "$image"
 cp "$image" "$output/guest.img.gz"
 sha256sum "$output/guest.img.gz" > "$output/guest.img.gz.sha256"
+BUILD_WORK="$work" BUILD_OUTPUT="$output" TARGET_URL="$base" GUEST_ARCH="$arch" \
+  python3 "$root/provenance.py"
 printf 'BUILT target=%s packages_ref=%s image=%s\n' "$target" "$packages_ref" "$output/guest.img.gz"

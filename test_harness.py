@@ -88,6 +88,15 @@ def test_runtime_has_separate_p2p_and_relay_assertions():
     assert '/mnt/e2e/guest-e2e.sh' in HARNESS.parent.joinpath('image-overlay/etc/rc.local').read_text()
 
 
+def test_runtime_emits_machine_readable_evidence_only_after_assertions():
+    runtime = HARNESS.read_text().split('run)', 1)[1].rsplit('\n*)', 1)[0]
+    self_check = runtime.index("grep -Fx 'RELAY-OVERLAY-PASS'")
+    result = runtime.index('E2E_RESULT_DIR')
+    assert self_check < result
+    assert '"p2p_connection":true' in runtime
+    assert '"relay_payload":true' in runtime
+
+
 if __name__ == '__main__':
     test_harness_has_separate_image_build_and_tap_only_run_modes()
     test_image_build_indexes_pr_package_before_imagebuilder_runs()
@@ -99,4 +108,5 @@ if __name__ == '__main__':
     test_runtime_uses_ephemeral_readonly_9p_share_not_guest_fw_cfg_sysfs()
     test_baked_guest_boots_9p_script_without_serial_input()
     test_runtime_has_separate_p2p_and_relay_assertions()
+    test_runtime_emits_machine_readable_evidence_only_after_assertions()
     print('PASS: QEMU NetBird harness contract')

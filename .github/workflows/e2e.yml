@@ -3,16 +3,39 @@ name: NetBird E2E
 "on":
   workflow_dispatch:
     inputs:
-      packages_ref:
-        description: Full OpenWrt packages commit SHA (defaults to PR 30896 head)
-        required: false
-        default: 8379ac12710eea0772da83066999ed44b82951b6
+      pr_number:
+        description: OpenWrt packages NetBird PR number (master or openwrt-25.12)
+        required: true
+        default: '30895'
         type: string
 permissions:
   contents: read
 jobs:
+  prepare:
+    name: Resolve and validate NetBird PR
+    runs-on: ubuntu-latest
+    outputs:
+      pr_number: ${{ steps.pr.outputs.pr_number }}
+      head_sha: ${{ steps.pr.outputs.head_sha }}
+      base_branch: ${{ steps.pr.outputs.base_branch }}
+      release: ${{ steps.pr.outputs.release }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Resolve PR head and assert supported target branch
+        id: pr
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+        run: python3 resolve-pr.py "$PR_NUMBER" "$RUNNER_TEMP/selection.json"
+      - uses: actions/upload-artifact@v6
+        with:
+          name: pr-selection
+          path: ${{ runner.temp }}/selection.json
+          if-no-files-found: error
+          retention-days: 2
   build-image:
     name: Build ${{ matrix.arch }} OpenWrt image from PR package
+    needs: prepare
     runs-on: avrea-ubuntu-latest-8-vcpu
     timeout-minutes: 90
     strategy:
@@ -25,9 +48,12 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y zstd rsync file git curl build-essential python3
-      - name: Cross-build PR NetBird APK and bake image
+      - name: Cross-build PR NetBird APK and bake matching OpenWrt image
         env:
-          PACKAGES_REF: ${{ inputs.packages_ref }}
+          PR_NUMBER: ${{ needs.prepare.outputs.pr_number }}
+          PACKAGES_REF: ${{ needs.prepare.outputs.head_sha }}
+          OPENWRT_RELEASE: ${{ needs.prepare.outputs.release }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           ./build-image.sh '${{ matrix.arch }}' "$RUNNER_TEMP/image"
@@ -39,6 +65,7 @@ jobs:
           path: |
             ${{ runner.temp }}/image/guest-${{ matrix.arch }}.img.gz
             ${{ runner.temp }}/image/guest-${{ matrix.arch }}.sha256
+            ${{ runner.temp }}/image/provenance.json
           if-no-files-found: error
           retention-days: 2
   e2e:
@@ -58,6 +85,10 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/download-artifact@v7
         with:
+          name: pr-selection
+          path: ${{ runner.temp }}/image
+      - uses: actions/download-artifact@v7
+        with:
           name: openwrt-guest-${{ matrix.arch }}
           path: ${{ runner.temp }}/image
       - name: Verify guest artifact and runtime tools
@@ -68,7 +99,49 @@ jobs:
           sudo apt-get install -y qemu-system-x86 qemu-system-arm qemu-efi-aarch64 iproute2 iptables netcat-openbsd
           test -c /dev/kvm && test -c /dev/net/tun
       - name: Start fixture and reference peer, run TAP-only QEMU
-        run: sudo RUNNER_TEMP="$RUNNER_TEMP" GITHUB_RUN_ID="$GITHUB_RUN_ID" ./run-e2e.sh '${{ matrix.arch }}' "$RUNNER_TEMP/image/guest-${{ matrix.arch }}.img.gz"
+        id: runtime
+        run: sudo RUNNER_TEMP="$RUNNER_TEMP" E2E_RESULT_DIR="$RUNNER_TEMP" GITHUB_RUN_ID="$GITHUB_RUN_ID" ./run-e2e.sh '${{ matrix.arch }}' "$RUNNER_TEMP/image/guest-${{ matrix.arch }}.img.gz"
       - name: Verify no disposable resources remain
+        id: cleanup
         if: always()
         run: sudo RUNNER_TEMP="$RUNNER_TEMP" GITHUB_RUN_ID="$GITHUB_RUN_ID" ./verify-cleanup.sh '${{ matrix.arch }}'
+      - name: Write human-readable architecture report
+        if: always()
+        env:
+          RUNTIME_OUTCOME: ${{ steps.runtime.outcome }}
+          CLEANUP_OUTCOME: ${{ steps.cleanup.outcome }}
+        run: |
+          python3 report.py arch "$RUNNER_TEMP/image/selection.json" "$RUNNER_TEMP/image/provenance.json" \
+            "$RUNNER_TEMP/e2e-result.json" "$RUNNER_TEMP/test-report-${{ matrix.arch }}.md" \
+            '${{ matrix.arch }}' "$RUNTIME_OUTCOME" "$CLEANUP_OUTCOME"
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: test-result-${{ matrix.arch }}
+          path: |
+            ${{ runner.temp }}/test-report-${{ matrix.arch }}.md
+            ${{ runner.temp }}/test-report-${{ matrix.arch }}.json
+          if-no-files-found: error
+          retention-days: 14
+  report:
+    name: Human-readable E2E report
+    needs: [prepare, build-image, e2e]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v7
+        continue-on-error: true
+        with:
+          pattern: test-result-*
+          path: ${{ runner.temp }}/reports
+          merge-multiple: true
+      - name: Summarize both architectures
+        run: python3 report.py aggregate "$RUNNER_TEMP/reports" "$RUNNER_TEMP/NetBird-E2E-report.md"
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: NetBird-E2E-report
+          path: ${{ runner.temp }}/NetBird-E2E-report.md
+          if-no-files-found: error
+          retention-days: 14

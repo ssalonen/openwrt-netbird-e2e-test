@@ -4,11 +4,13 @@ Standalone, disposable OpenWrt package test on [Avrea](https://docs.avrea.com/ru
 
 ## Run
 
-Open [Actions → NetBird E2E](Actions - NetBird E2E) and select **Run workflow**. The default `packages_ref` is the exact master PR #30896 head, `8379ac12710eea0772da83066999ed44b82951b6`. To test another revision, supply its **full 40-character commit SHA** from `openwrt/packages`.
+Open [Actions → NetBird E2E](Actions - NetBird E2E), select **Run workflow**, and enter the **OpenWrt packages PR number** (for example, `30896` for master or `30895` for `openwrt-25.12`). No SHA, image URL, or checksum is needed. The workflow reads the PR head SHA from GitHub, rejects PRs targeting anything other than `master` or `openwrt-25.12`, and checks that the PR changes the NetBird package Makefile. It fetches that exact PR ref and fails if the head changes before the build.
+
+For a `master` PR, the build uses matching x86/64 and armsr/armv8 **OpenWrt master snapshot** SDKs and ImageBuilders. For an `openwrt-25.12` PR, it uses the **25.12.1 release** SDKs and ImageBuilders. Snapshot builds move; the report records each architecture's actual firmware version and full commit, exact SDK/ImageBuilder archive names, download URLs and SHA-256 hashes, PR commit, package/image hashes, and every E2E and cleanup assertion. Find the combined Markdown report under the workflow's **Summary** and **NetBird-E2E-report** artifact; each architecture job also has its own summary.
 
 The workflow needs no prebuilt image, APK URL, or long-lived credentials:
 
-1. On x86_64 Avrea build runners, cross-compile the NetBird package from that commit using official checksum-verified OpenWrt 25.12.1 x86/64 and armsr/armv8 SDKs.
+1. On x86_64 Avrea build runners, cross-compile the NetBird package from the resolved PR head using the matching checksum-verified release or snapshot x86/64 and armsr/armv8 SDKs.
 2. Re-sign only temporary copies of the built APKs into signed local APK v3 repositories; build x86_64 and arm64 OpenWrt images with matching ImageBuilders.
 3. Upload architecture-specific images and SHA-256 manifests as workflow artifacts. Download and verify the manifest on each target-architecture Avrea runner.
 4. Boot the upstream combined NetBird server fixture, create an ephemeral owner/PAT and a two-use setup key, and enroll a known-good Docker peer.
