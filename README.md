@@ -1,58 +1,28 @@
-# OpenWrt NetBird QEMU E2E test
+# OpenWrt NetBird QEMU E2E
 
-A disposable integration harness for an OpenWrt NetBird package build.
+Standalone, disposable OpenWrt package test on [Avrea](https://docs.avrea.com/runners/). No `external-checkout` checkout or permanent runner network changes.
 
-## Scope
+## Run
 
-- Bake a hash-verified, PR-built `netbird` APK and `wget` into an OpenWrt x86_64 image.
-- Boot one OpenWrt QEMU guest using **only** a namespace-local TAP NIC.
-- Connect the guest to a Docker reference peer through a disposable network namespace.
-- Remove per-run QEMU, Docker, TAP, bridge, veth, and namespace resources on exit.
+Open [Actions → NetBird E2E](Actions - NetBird E2E) and select **Run workflow**. The default `packages_ref` is the exact master PR #30896 head, `8379ac12710eea0772da83066999ed44b82951b6`. To test another revision, supply its **full 40-character commit SHA** from `openwrt/packages`.
 
-No OpenWrt package source, NetBird server fixture, credentials, build artifacts, or prior spike history is included here.
+The workflow needs no prebuilt image, APK URL, or long-lived credentials:
 
-## Prerequisites
+1. On x86_64 Avrea build runners, cross-compile the NetBird package from that commit using official checksum-verified OpenWrt 25.12.1 x86/64 and armsr/armv8 SDKs.
+2. Re-sign only temporary copies of the built APKs into signed local APK v3 repositories; build x86_64 and arm64 OpenWrt images with matching ImageBuilders.
+3. Upload architecture-specific images and SHA-256 manifests as workflow artifacts. Download and verify the manifest on each target-architecture Avrea runner.
+4. Boot the upstream combined NetBird server fixture, create an ephemeral owner/PAT and a two-use setup key, and enroll a known-good Docker peer.
+5. Boot the OpenWrt guest with **only one TAP NIC**, enroll it, require P2P plus a fresh overlay nonce, restart with `NB_FORCE_RELAY=true`, and require `Relayed` plus a second, distinct nonce.
+6. Read back cleanup: no named namespace, host TAP/bridge/gateway, fixture container, peer, payload server, firewall rule, temporary image, or fixture credential directory.
 
-Run `build-image` on a matching x86_64 host with an OpenWrt 25.12.1 ImageBuilder and the SDK used for the package build. `run` requires root, KVM, Docker, `/dev/net/tun`, and `ip netns`.
+The control-plane fixture is generated from the pinned upstream NetBird `v0.81.4` script. It uses HTTP on an ephemeral CI runner and synthetic credentials only; do not expose it on a non-disposable host. The guest receives its disposable key on a temporary **read-only ext4 disk**, never as a serial-console command or QEMU argument. The runner's IP forwarding and tagged iptables rules are restored/removed in the harness exit trap.
 
-The package source APK must be hash-verified before it is handed to the harness. The harness copies it into a local temporary repository, re-signs only that copy using the SDK build key, and generates a signed APK v3 repository index. It removes its temporary ImageBuilder repository override and public key when the build command exits.
-
-## Build a guest image
-
-```sh
-IMAGEBUILDER=/path/to/openwrt-imagebuilder-25.12.1-x86-64.Linux-x86_64 \
-NETBIRD_APK=/path/to/netbird-0.81.4-r1.apk \
-SDK_PUBLIC_KEY=/path/to/sdk/public-key.pem \
-SDK_PRIVATE_KEY=/path/to/sdk/private-key.pem \
-OUTPUT_IMAGE=$PWD/openwrt-netbird-wget-ext4.img.gz \
-./harness.sh build-image
-```
-
-## TAP-only NetBird enrollment, P2P, and relay gate
-
-`run` requires an already-running NetBird server fixture and an enrolled Docker reference peer on the same controlled topology. It creates a fresh nonce, serves it from that peer, then requires the OpenWrt guest to fetch it over the overlay first as P2P and then with relay forcing enabled.
-
-```sh
-sudo IMAGE=$PWD/openwrt-netbird-wget-ext4.img.gz \
-  NB_SETUP_KEY="$(cat /secure/runtime/setup-key)" \
-  NB_MANAGEMENT_URL=https://netbird.netbird.test \
-  NB_CA_CERT=/secure/runtime/ca-bundle.pem \
-  PEER_CONTAINER=netbird-reference-peer \
-  PEER_OVERLAY_IP=100.77.120.41 \
-  ./harness.sh run
-```
-
-The setup key and CA are provided through QEMU `fw_cfg`, not the serial command stream. The guest has only the namespace-local TAP NIC; there is no user-mode NAT NIC, WAN route, or provisioning interface in this phase.
-
-The peer container must have `python3` and must already be connected to the same test NetBird control plane. The current harness starts a temporary HTTP server inside that container and removes it during cleanup.
-
-## Local contract test
+## Local checks
 
 ```sh
 python3 test_harness.py
-bash -n harness.sh
+bash -n build-image.sh run-e2e.sh harness.sh verify-cleanup.sh fixtures/upstream/*.sh
+shellcheck build-image.sh run-e2e.sh harness.sh verify-cleanup.sh guest-e2e.sh fixtures/upstream/*.sh
 ```
 
-## Status
-
-The topology and cleanup primitive have been proven separately. This repository currently contains the isolated image-build and TAP-only harness scaffold; NetBird enrollment plus P2P and forced-relay overlay assertions are the next implementation slice.
+`build-image.sh x86_64|arm64 OUTPUT_DIR` requires an x86_64 Linux host and the official OpenWrt release downloads. `run-e2e.sh x86_64|arm64 IMAGE` requires a disposable root-capable host with Docker, KVM, TUN and the architecture's QEMU binary. Use the GitHub workflow for the complete integration gate.

@@ -1,9 +1,9 @@
 #!/bin/sh
-# Executed in the disposable OpenWrt guest from QEMU fw_cfg, never over serial.
+# Executed from a read-only disposable ext4 config disk, never typed over serial.
 set -eu
-fw=/sys/firmware/qemu_fw_cfg/by_name/opt/netbird
-read_cfg() { cat "$fw/$1/raw"; }
-setup_key=$(read_cfg setup-key)
+fw=/mnt/e2e
+read_cfg() { cat "$fw/$1"; }
+setup_key=$(cat /mnt/e2e/setup-key)
 url=$(read_cfg management-url)
 peer_ip=$(read_cfg peer-ip)
 port=$(read_cfg payload-port)

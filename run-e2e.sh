@@ -11,6 +11,7 @@ run_id="e2e${GITHUB_RUN_ID: -6}"
 fixture_arch=${arch/_/-}
 work="${RUNNER_TEMP:-/tmp}/nbfixture-${GITHUB_RUN_ID:-local}-${fixture_arch}"
 peer="nbref-$run_id"
+# shellcheck disable=SC2329 # Invoked by the EXIT trap.
 cleanup() {
   set +e
   docker rm -f "$peer" >/dev/null 2>&1 || true
@@ -44,7 +45,14 @@ done
 peer_ip=$(printf '%s\n' "$status" | sed -nE 's/.*NetBird IP: (100\.[0-9]+\.[0-9]+\.[0-9]+).*/\1/p' | sed -n '1p')
 [[ "$peer_ip" =~ ^100\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'reference peer lacks overlay IP' >&2; exit 1; }
 printf 'Reference peer enrolled: %s\n' "$peer_ip"
+before_forwarding=$(sysctl -n net.ipv4.ip_forward)
+result=0
 IMAGE="$image" NB_SETUP_KEY="$(<"$work/state/setup-key")" \
-  NB_MANAGEMENT_URL="http://$server_ip" NB_CA_CERT=/etc/ssl/certs/ca-certificates.crt \
+  NB_MANAGEMENT_URL="http://$server_ip" \
   PEER_CONTAINER="$peer" PEER_OVERLAY_IP="$peer_ip" \
-  RUN_ID="$run_id" STATE_ROOT="${RUNNER_TEMP:-/tmp}" GUEST_ARCH="$arch" ./harness.sh run
+  RUN_ID="$run_id" STATE_ROOT="${RUNNER_TEMP:-/tmp}" GUEST_ARCH="$arch" ./harness.sh run || result=$?
+[[ "$(sysctl -n net.ipv4.ip_forward)" == "$before_forwarding" ]] || {
+  echo 'LEAK: IPv4 forwarding was not restored' >&2
+  result=1
+}
+exit "$result"

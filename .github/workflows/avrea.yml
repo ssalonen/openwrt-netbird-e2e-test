@@ -52,5 +52,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 test_harness.py
-          bash -n harness.sh
+          python3 test_serial_console.py
+          bash -n harness.sh build-image.sh run-e2e.sh verify-cleanup.sh
+          sh -n guest-e2e.sh
           yamllint -d '{extends: default, rules: {line-length: disable}}' .github/workflows/avrea.yml

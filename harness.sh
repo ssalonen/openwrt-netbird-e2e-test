@@ -61,19 +61,17 @@ run)
     : "${IMAGE:?set IMAGE to the baked OpenWrt ext4-combined image}"
     : "${NB_SETUP_KEY:?set NB_SETUP_KEY to a disposable NetBird setup key}"
     : "${NB_MANAGEMENT_URL:?set NB_MANAGEMENT_URL to the fixture management URL}"
-    : "${NB_CA_CERT:?set NB_CA_CERT to the fixture CA certificate path}"
     : "${PEER_CONTAINER:?set PEER_CONTAINER to the enrolled Docker reference peer container}"
     : "${PEER_OVERLAY_IP:?set PEER_OVERLAY_IP to the reference peer NetBird overlay IP}"
     : "${GUEST_ARCH:=x86_64}"
     : "${PEER_PAYLOAD_PORT:=18080}"
     test -s "$IMAGE"
-    test -s "$NB_CA_CERT"
     [[ "$NB_MANAGEMENT_URL" =~ ^https?://[A-Za-z0-9.-]+(:[0-9]+)?$ ]] || { echo "NB_MANAGEMENT_URL must be a simple http(s) URL" >&2; exit 2; }
     [[ "$PEER_OVERLAY_IP" =~ ^100\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]] || { echo "PEER_OVERLAY_IP must be a NetBird overlay IPv4 address" >&2; exit 2; }
     [[ "$PEER_CONTAINER" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]] || { echo "PEER_CONTAINER has invalid characters" >&2; exit 2; }
     [[ "$PEER_PAYLOAD_PORT" =~ ^[0-9]{2,5}$ ]] || { echo "PEER_PAYLOAD_PORT must be numeric" >&2; exit 2; }
     [[ "${EUID}" -eq 0 ]] || { echo "run mode must execute as root" >&2; exit 1; }
-    for command in ip docker gzip nc openssl iptables sysctl; do need "$command"; done
+    for command in ip docker gzip nc openssl iptables sysctl mkfs.ext4; do need "$command"; done
     case "$GUEST_ARCH" in
       x86_64) qemu='qemu-system-x86_64'; qemu_args=(-enable-kvm) ;;
       arm64) qemu='qemu-system-aarch64'; qemu_args=(-machine 'virt,accel=kvm' -cpu host -bios /usr/share/AAVMF/AAVMF_CODE.fd) ;;
@@ -103,9 +101,18 @@ run)
         rm -rf "$state"
     }
     trap cleanup EXIT
+    umask 077
     mkdir -p "$state"
     gzip -dc "$IMAGE" > "$state/disk.img"
-    cp "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)/guest-e2e.sh" "$state/guest-e2e.sh"
+    mkdir -m 700 "$state/config"
+    cp "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)/guest-e2e.sh" "$state/config/guest-e2e.sh"
+    printf '%s\n' "$NB_SETUP_KEY" > "$state/config/setup-key"
+    printf '%s\n' "$NB_MANAGEMENT_URL" > "$state/config/management-url"
+    printf '%s\n' "$PEER_OVERLAY_IP" > "$state/config/peer-ip"
+    printf '%s\n' "$PEER_PAYLOAD_PORT" > "$state/config/payload-port"
+    printf '%s\n' "$p2p_nonce" > "$state/config/p2p-nonce"
+    printf '%s\n' "$relay_nonce" > "$state/config/relay-nonce"
+    mkfs.ext4 -q -F -d "$state/config" "$state/config.img" 16M
     printf '%s\n' "$p2p_nonce" > "$state/p2p-nonce"
     printf '%s\n' "$relay_nonce" > "$state/relay-nonce"
     docker run -d --rm --name "$payload" --network "container:$PEER_CONTAINER" \
@@ -130,35 +137,24 @@ run)
     iptables -A FORWARD -i "$gateway" -j ACCEPT
     iptables -A FORWARD -o "$gateway" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 
-    # Intentionally only one guest NIC: the namespace TAP interface.
-    # The setup key and CA travel through QEMU fw_cfg; neither is echoed on serial.
+    # Only one guest NIC: the namespace TAP interface. Secrets are on a
+    # temporary read-only virtio disk, not on the serial console or QEMU argv.
     ip netns exec "$ns" "$qemu" "${qemu_args[@]}" -display none -m 1024 \
         -drive file="$state/disk.img",format=raw,if=virtio \
+        -drive file="$state/config.img",format=raw,if=virtio,readonly=on \
         -netdev tap,id=n0,ifname="$tap",script=no,downscript=no \
         -device virtio-net-pci,netdev=n0 \
-        -fw_cfg name=opt/netbird/setup-key,string="$NB_SETUP_KEY" \
-        -fw_cfg name=opt/netbird/guest-script,file="$state/guest-e2e.sh" \
-        -fw_cfg name=opt/netbird/management-url,string="$NB_MANAGEMENT_URL" \
-        -fw_cfg name=opt/netbird/peer-ip,string="$PEER_OVERLAY_IP" \
-        -fw_cfg name=opt/netbird/payload-port,string="$PEER_PAYLOAD_PORT" \
-        -fw_cfg name=opt/netbird/p2p-nonce,string="$p2p_nonce" \
-        -fw_cfg name=opt/netbird/relay-nonce,string="$relay_nonce" \
-        -fw_cfg name=opt/netbird/ca-cert,file="$NB_CA_CERT" \
         -chardev socket,id=s0,path="$state/serial.sock",server=on,wait=off \
         -serial chardev:s0 -pidfile "$state/qemu.pid" -daemonize
     for _ in $(seq 1 30); do test -S "$state/serial.sock" && break; sleep 1; done
     test -S "$state/serial.sock"
-    {
-        sleep 20
-        printf '\n'
-        sleep 2
-        # shellcheck disable=SC2016 # Deliberately emitted for expansion by the guest shell.
-        printf 'sh /sys/firmware/qemu_fw_cfg/by_name/opt/netbird/guest-script/raw\n'
-        sleep 180
-    } | timeout 240 nc -U "$state/serial.sock" > "$state/console.log" 2>&1 || true
+    serial_rc=0
+    python3 "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)/serial-console.py" \
+        "$state/serial.sock" "$state/console.log" || serial_rc=$?
     tr -d '\r' < "$state/console.log" > "$state/console.normalized"
-    if ! grep -Fxq 'RELAY-OVERLAY-PASS' "$state/console.normalized"; then
+    if (( serial_rc != 0 )) || ! grep -Fxq 'RELAY-OVERLAY-PASS' "$state/console.normalized"; then
         tail -100 "$state/console.normalized" >&2
+        exit 1
     fi
     grep -F 'Connection type: P2P' "$state/console.normalized"
     grep -F 'Connection type: Relayed' "$state/console.normalized"

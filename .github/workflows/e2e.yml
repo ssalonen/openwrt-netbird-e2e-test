@@ -33,7 +33,7 @@ jobs:
           ./build-image.sh '${{ matrix.arch }}' "$RUNNER_TEMP/image"
           cp "$RUNNER_TEMP/image/guest.img.gz" "$RUNNER_TEMP/image/guest-${{ matrix.arch }}.img.gz"
           (cd "$RUNNER_TEMP/image" && sha256sum "guest-${{ matrix.arch }}.img.gz" > "guest-${{ matrix.arch }}.sha256")
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: openwrt-guest-${{ matrix.arch }}
           path: |
@@ -56,7 +56,7 @@ jobs:
             runner: avrea-ubuntu-latest-arm-4-vcpu
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: openwrt-guest-${{ matrix.arch }}
           path: ${{ runner.temp }}/image
@@ -65,7 +65,7 @@ jobs:
           set -euo pipefail
           (cd "$RUNNER_TEMP/image" && sha256sum -c 'guest-${{ matrix.arch }}.sha256')
           sudo apt-get update -qq
-          sudo apt-get install -y qemu-system-x86 qemu-system-arm qemu-efi-aarch64 iproute2 iptables netcat-openbsd
+          sudo apt-get install -y qemu-system-x86 qemu-system-arm qemu-efi-aarch64 iproute2 iptables netcat-openbsd e2fsprogs
           test -c /dev/kvm && test -c /dev/net/tun
       - name: Start fixture and reference peer, run TAP-only QEMU
         run: sudo RUNNER_TEMP="$RUNNER_TEMP" GITHUB_RUN_ID="$GITHUB_RUN_ID" ./run-e2e.sh '${{ matrix.arch }}' "$RUNNER_TEMP/image/guest-${{ matrix.arch }}.img.gz"

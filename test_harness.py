@@ -52,8 +52,19 @@ def test_runtime_mode_normalizes_serial_crlf_before_assertions():
 def test_runtime_requires_explicit_enrollment_and_payload_inputs():
     text = HARNESS.read_text()
     runtime = text.split('run)', 1)[1].rsplit('\n*)', 1)[0]
-    for required in ('NB_SETUP_KEY', 'NB_MANAGEMENT_URL', 'NB_CA_CERT', 'PEER_OVERLAY_IP'):
+    for required in ('NB_SETUP_KEY', 'NB_MANAGEMENT_URL', 'PEER_OVERLAY_IP'):
         assert required in runtime
+
+
+def test_runtime_uses_ephemeral_readonly_config_disk_not_guest_fw_cfg_sysfs():
+    runtime = HARNESS.read_text().split('run)', 1)[1].rsplit('\n*)', 1)[0]
+    guest = HARNESS.with_name('guest-e2e.sh').read_text()
+    serial = HARNESS.with_name('serial-console.py').read_text()
+    assert 'mkfs.ext4' in runtime
+    assert 'readonly=on' in runtime
+    assert '/dev/vdb' in serial
+    assert 'qemu_fw_cfg' not in guest
+    assert '/mnt/e2e/setup-key' in guest
 
 
 def test_runtime_has_separate_p2p_and_relay_assertions():
@@ -65,7 +76,7 @@ def test_runtime_has_separate_p2p_and_relay_assertions():
     assert 'NB_FORCE_RELAY=true' in guest
     assert 'netbird up --setup-key' in guest
     assert 'p2p-nonce' in guest and 'relay-nonce' in guest
-    assert 'guest-script/raw' in runtime
+    assert '/mnt/e2e/guest-e2e.sh' in HARNESS.with_name('serial-console.py').read_text()
 
 
 if __name__ == '__main__':
@@ -76,5 +87,6 @@ if __name__ == '__main__':
     test_runtime_mode_has_no_user_nat_netdev()
     test_runtime_mode_normalizes_serial_crlf_before_assertions()
     test_runtime_requires_explicit_enrollment_and_payload_inputs()
+    test_runtime_uses_ephemeral_readonly_config_disk_not_guest_fw_cfg_sysfs()
     test_runtime_has_separate_p2p_and_relay_assertions()
     print('PASS: QEMU NetBird harness contract')
