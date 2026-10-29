@@ -39,7 +39,7 @@ def test_image_build_resigns_only_the_local_copy_with_sdk_key():
 
 def test_runtime_mode_has_no_user_nat_netdev():
     text = HARNESS.read_text()
-    runtime = text.split('run)', 1)[1].split(';;', 1)[0]
+    runtime = text.split('run)', 1)[1].rsplit('\n*)', 1)[0]
     assert '-netdev user' not in runtime
     assert 'ifname="$tap"' in runtime
 
@@ -51,14 +51,14 @@ def test_runtime_mode_normalizes_serial_crlf_before_assertions():
 
 def test_runtime_requires_explicit_enrollment_and_payload_inputs():
     text = HARNESS.read_text()
-    runtime = text.split('run)', 1)[1].split(';;', 1)[0]
+    runtime = text.split('run)', 1)[1].rsplit('\n*)', 1)[0]
     for required in ('NB_SETUP_KEY', 'NB_MANAGEMENT_URL', 'NB_CA_CERT', 'PEER_OVERLAY_IP'):
         assert required in runtime
 
 
 def test_runtime_has_separate_p2p_and_relay_assertions():
     text = HARNESS.read_text()
-    runtime = text.split('run)', 1)[1].split(';;', 1)[0]
+    runtime = text.split('run)', 1)[1].rsplit('\n*)', 1)[0]
     assert 'Connection type: P2P' in runtime
     assert 'Connection type: Relayed' in runtime
     assert 'NB_FORCE_RELAY=true' in runtime

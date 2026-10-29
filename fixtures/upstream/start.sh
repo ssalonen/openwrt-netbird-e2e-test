@@ -15,7 +15,13 @@ command -v curl >/dev/null
 command -v docker >/dev/null
 docker info >/dev/null
 
-mkdir -p "$work"
+if [[ -e "$work" ]]; then
+    echo "fixture work directory exists: $work" >&2
+    exit 1
+fi
+mkdir -p "$fixture_root"
+mkdir -m 700 "$work"
+printf '%s\n' "$work" > "$work/owner-marker"
 cd "$work"
 if [[ -e docker-compose.yml || -e config.yaml ]]; then
     echo "fixture work directory is not empty: $work" >&2

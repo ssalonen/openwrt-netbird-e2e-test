@@ -1,70 +1,74 @@
 ---
 name: NetBird E2E
-
 "on":
   workflow_dispatch:
     inputs:
-      image_url:
-        description: HTTPS URL of a hash-verified, baked OpenWrt guest image
-        required: true
+      packages_ref:
+        description: Full OpenWrt packages commit SHA (defaults to PR 30896 head)
+        required: false
+        default: 8379ac12710eea0772da83066999ed44b82951b6
         type: string
-      image_sha256:
-        description: SHA-256 of image_url
-        required: true
-        type: string
-
 permissions:
   contents: read
-
 jobs:
-  e2e-x86_64:
-    runs-on: avrea-ubuntu-latest-4-vcpu
-    timeout-minutes: 30
+  build-image:
+    name: Build ${{ matrix.arch }} OpenWrt image from PR package
+    runs-on: avrea-ubuntu-latest-8-vcpu
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x86_64, arm64]
     steps:
       - uses: actions/checkout@v5
-      - name: Fetch baked guest image
+      - name: Install build dependencies
         run: |
-          set -euo pipefail
-          curl -fsSL "$IMAGE_URL" -o guest.img.gz
-          echo "$IMAGE_SHA256  guest.img.gz" | sha256sum -c -
+          sudo apt-get update -qq
+          sudo apt-get install -y zstd rsync file git curl build-essential python3
+      - name: Cross-build PR NetBird APK and bake image
         env:
-          IMAGE_URL: ${{ inputs.image_url }}
-          IMAGE_SHA256: ${{ inputs.image_sha256 }}
-      - name: Start and bootstrap upstream fixture
+          PACKAGES_REF: ${{ inputs.packages_ref }}
         run: |
           set -euo pipefail
-          sudo FIXTURE_ROOT="$RUNNER_TEMP" FIXTURE_RUN_ID="nbfixture-${GITHUB_RUN_ID}" fixtures/upstream/start.sh
-          fixture="$RUNNER_TEMP/nbfixture-${GITHUB_RUN_ID}"
-          host_ip="$(ip route get 1.1.1.1 | awk '{print $7; exit}')"
-          sudo NETBIRD_URL="http://$host_ip" fixtures/upstream/bootstrap.sh "$fixture/state"
-          printf 'FIXTURE=%s\nHOST_IP=%s\n' "$fixture" "$host_ip" >> "$GITHUB_ENV"
-      - name: Enroll reference peer
+          ./build-image.sh '${{ matrix.arch }}' "$RUNNER_TEMP/image"
+          cp "$RUNNER_TEMP/image/guest.img.gz" "$RUNNER_TEMP/image/guest-${{ matrix.arch }}.img.gz"
+          (cd "$RUNNER_TEMP/image" && sha256sum "guest-${{ matrix.arch }}.img.gz" > "guest-${{ matrix.arch }}.sha256")
+      - uses: actions/upload-artifact@v4
+        with:
+          name: openwrt-guest-${{ matrix.arch }}
+          path: |
+            ${{ runner.temp }}/image/guest-${{ matrix.arch }}.img.gz
+            ${{ runner.temp }}/image/guest-${{ matrix.arch }}.sha256
+          if-no-files-found: error
+          retention-days: 2
+  e2e:
+    name: ${{ matrix.arch }} P2P and forced relay
+    needs: build-image
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: avrea-ubuntu-latest-4-vcpu
+          - arch: arm64
+            runner: avrea-ubuntu-latest-arm-4-vcpu
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          name: openwrt-guest-${{ matrix.arch }}
+          path: ${{ runner.temp }}/image
+      - name: Verify guest artifact and runtime tools
         run: |
           set -euo pipefail
-          sudo docker run -d --rm --name netbird-reference --hostname netbird-reference \
-            --network host --privileged \
-            -e NB_SETUP_KEY="$(sudo cat "$FIXTURE/state/setup-key")" \
-            -e NB_MANAGEMENT_URL="http://$HOST_IP" \
-            -v netbird-reference:/var/lib/netbird netbirdio/netbird:0.81.4
-          for _ in $(seq 1 60); do
-            sudo docker exec netbird-reference netbird status | grep -q 'Management: Connected' && break
-            sleep 2
-          done
-          sudo docker exec netbird-reference netbird status
-          sudo docker exec netbird-reference netbird status --json > reference-status.json
-          peer_ip="$(python3 -c 'import json; d=json.load(open("reference-status.json")); print(d["netbirdIp"])')"
-          echo "PEER_IP=$peer_ip" >> "$GITHUB_ENV"
-      - name: Run P2P and forced-relay QEMU assertions
-        run: |
-          set -euo pipefail
-          sudo IMAGE="$GITHUB_WORKSPACE/guest.img.gz" \
-            NB_SETUP_KEY="$(sudo cat "$FIXTURE/state/setup-key")" \
-            NB_MANAGEMENT_URL="http://$HOST_IP" \
-            NB_CA_CERT=/etc/ssl/certs/ca-certificates.crt \
-            PEER_CONTAINER=netbird-reference PEER_OVERLAY_IP="$PEER_IP" \
-            RUN_ID="e2e${GITHUB_RUN_ID: -6}" ./harness.sh run
-      - name: Cleanup fixture
+          (cd "$RUNNER_TEMP/image" && sha256sum -c 'guest-${{ matrix.arch }}.sha256')
+          sudo apt-get update -qq
+          sudo apt-get install -y qemu-system-x86 qemu-system-arm qemu-efi-aarch64 iproute2 iptables netcat-openbsd
+          test -c /dev/kvm && test -c /dev/net/tun
+      - name: Start fixture and reference peer, run TAP-only QEMU
+        run: sudo RUNNER_TEMP="$RUNNER_TEMP" GITHUB_RUN_ID="$GITHUB_RUN_ID" ./run-e2e.sh '${{ matrix.arch }}' "$RUNNER_TEMP/image/guest-${{ matrix.arch }}.img.gz"
+      - name: Verify no disposable resources remain
         if: always()
-        run: |
-          sudo docker rm -f netbird-reference || true
-          test -n "${FIXTURE:-}" && sudo fixtures/upstream/stop.sh "$FIXTURE" || true
+        run: sudo RUNNER_TEMP="$RUNNER_TEMP" GITHUB_RUN_ID="$GITHUB_RUN_ID" ./verify-cleanup.sh '${{ matrix.arch }}'

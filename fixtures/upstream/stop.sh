@@ -4,10 +4,17 @@ set -euo pipefail
 
 work=${1:?usage: stop.sh FIXTURE_WORKDIR}
 case "$work" in
-  */.fixture/nbfixture-*) ;;
+  */nbfixture-*) ;;
   *) echo "refusing unexpected fixture work directory: $work" >&2; exit 2 ;;
 esac
 
-test -f "$work/docker-compose.yml"
-docker compose -f "$work/docker-compose.yml" down --volumes --remove-orphans
-rm -rf "$work"
+test -f "$work/owner-marker"
+test "$(cat "$work/owner-marker")" = "$work"
+if [[ -f "$work/docker-compose.yml" ]]; then
+  if [[ -f "$work/compose.ci.yml" ]]; then
+    docker compose -f "$work/docker-compose.yml" -f "$work/compose.ci.yml" down --volumes --remove-orphans
+  else
+    docker compose -f "$work/docker-compose.yml" down --volumes --remove-orphans
+  fi
+fi
+rm -rf -- "$work"

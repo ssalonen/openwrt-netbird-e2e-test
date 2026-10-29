@@ -16,7 +16,7 @@ ns="nbqemu-$run_id"
 tap="tap0"
 bridge="br0"
 gateway="gw-$run_id"
-peer="nbqemu-peer-$run_id"
+payload="nbpayload-$run_id"
 
 need() {
     command -v "$1" >/dev/null || { echo "missing command: $1" >&2; exit 1; }
@@ -45,7 +45,7 @@ build-image)
     "$apk_tool" adbsign --allow-untrusted --reset-signatures --sign-key "$SDK_PRIVATE_KEY" "$local_repo"/netbird-*.apk
     "$apk_tool" --keys-dir "$IMAGEBUILDER/keys" mkndx --sign-key "$SDK_PRIVATE_KEY" --output "$local_repo/packages.adb" "$local_repo"/netbird-*.apk
     cp "$IMAGEBUILDER/repositories" "$IMAGEBUILDER/repositories.upstream"
-    { printf 'file://%s/packages.adb\\n' "$local_repo"; cat "$IMAGEBUILDER/repositories.upstream"; } > "$IMAGEBUILDER/repositories"
+    { printf 'file://%s/packages.adb\n' "$local_repo"; cat "$IMAGEBUILDER/repositories.upstream"; } > "$IMAGEBUILDER/repositories"
     restore_build_config() {
         test -f "$IMAGEBUILDER/repositories.upstream" && mv -f "$IMAGEBUILDER/repositories.upstream" "$IMAGEBUILDER/repositories" || true
         rm -f "$IMAGEBUILDER/keys/$key_name"
@@ -64,8 +64,8 @@ run)
     : "${NB_CA_CERT:?set NB_CA_CERT to the fixture CA certificate path}"
     : "${PEER_CONTAINER:?set PEER_CONTAINER to the enrolled Docker reference peer container}"
     : "${PEER_OVERLAY_IP:?set PEER_OVERLAY_IP to the reference peer NetBird overlay IP}"
+    : "${GUEST_ARCH:=x86_64}"
     : "${PEER_PAYLOAD_PORT:=18080}"
-    : "${PEER_IMAGE:=alpine:3.21}"
     test -s "$IMAGE"
     test -s "$NB_CA_CERT"
     [[ "$NB_MANAGEMENT_URL" =~ ^https?://[A-Za-z0-9.-]+(:[0-9]+)?$ ]] || { echo "NB_MANAGEMENT_URL must be a simple http(s) URL" >&2; exit 2; }
@@ -73,7 +73,13 @@ run)
     [[ "$PEER_CONTAINER" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]] || { echo "PEER_CONTAINER has invalid characters" >&2; exit 2; }
     [[ "$PEER_PAYLOAD_PORT" =~ ^[0-9]{2,5}$ ]] || { echo "PEER_PAYLOAD_PORT must be numeric" >&2; exit 2; }
     [[ "${EUID}" -eq 0 ]] || { echo "run mode must execute as root" >&2; exit 1; }
-    for command in ip docker qemu-system-x86_64 gzip nc openssl; do need "$command"; done
+    for command in ip docker gzip nc openssl iptables sysctl; do need "$command"; done
+    case "$GUEST_ARCH" in
+      x86_64) qemu='qemu-system-x86_64'; qemu_args=(-enable-kvm) ;;
+      arm64) qemu='qemu-system-aarch64'; qemu_args=(-machine 'virt,accel=kvm' -cpu host -bios /usr/share/AAVMF/AAVMF_CODE.fd) ;;
+      *) echo 'GUEST_ARCH must be x86_64 or arm64' >&2; exit 2 ;;
+    esac
+    need "$qemu"
     [[ -c /dev/net/tun ]] || { echo "/dev/net/tun unavailable" >&2; exit 1; }
     ! ip netns list | awk '{print $1}' | grep -Fxq "$ns" || { echo "namespace exists: $ns" >&2; exit 1; }
     docker inspect -f '{{.State.Running}}' "$PEER_CONTAINER" | grep -Fx true >/dev/null
@@ -85,8 +91,7 @@ run)
     cleanup() {
         set +e
         test -f "$state/qemu.pid" && kill "$(cat "$state/qemu.pid")" 2>/dev/null || true
-        docker exec "$PEER_CONTAINER" sh -c 'test -f /tmp/overlay-payload.pid && kill "$(cat /tmp/overlay-payload.pid)" 2>/dev/null || true; rm -f /tmp/overlay-nonce /tmp/overlay-payload.pid' >/dev/null 2>&1 || true
-        docker rm -f "$peer" >/dev/null 2>&1 || true
+        docker rm -f "$payload" >/dev/null 2>&1 || true
         iptables -D FORWARD -o "$gateway" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT >/dev/null 2>&1 || true
         iptables -D FORWARD -i "$gateway" -j ACCEPT >/dev/null 2>&1 || true
         iptables -t nat -D POSTROUTING -s 192.0.2.0/24 -m comment --comment "$nat_comment" -j MASQUERADE >/dev/null 2>&1 || true
@@ -99,8 +104,9 @@ run)
     mkdir -p "$state"
     gzip -dc "$IMAGE" > "$state/disk.img"
     printf '%s\n' "$overlay_nonce" > "$state/overlay-nonce"
-    docker cp "$state/overlay-nonce" "$PEER_CONTAINER:/tmp/overlay-nonce"
-    docker exec "$PEER_CONTAINER" sh -c "python3 -m http.server $PEER_PAYLOAD_PORT --bind 0.0.0.0 --directory /tmp >/tmp/overlay-payload.log 2>&1 & echo \$! >/tmp/overlay-payload.pid"
+    docker run -d --rm --name "$payload" --network "container:$PEER_CONTAINER" \
+        --mount "type=bind,src=$state,dst=/payload,readonly" python:3.12-alpine \
+        python3 -m http.server "$PEER_PAYLOAD_PORT" --bind 0.0.0.0 --directory /payload >/dev/null
 
     ip netns add "$ns"
     ip -n "$ns" link set lo up
@@ -120,21 +126,9 @@ run)
     iptables -A FORWARD -i "$gateway" -j ACCEPT
     iptables -A FORWARD -o "$gateway" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 
-    docker run -d --rm --name "$peer" --network none --cap-add NET_ADMIN "$PEER_IMAGE" sleep 300 >/dev/null
-    peer_pid="$(docker inspect -f '{{.State.Pid}}' "$peer")"
-    ip link add "veth-$run_id" type veth peer name peer0
-    ip link set "veth-$run_id" netns "$ns"
-    ip -n "$ns" link set "veth-$run_id" master "$bridge"
-    ip -n "$ns" link set "veth-$run_id" up
-    ip link set peer0 netns "$peer_pid"
-    nsenter -t "$peer_pid" -n ip link set lo up
-    nsenter -t "$peer_pid" -n ip link set peer0 name eth0
-    nsenter -t "$peer_pid" -n ip addr add 192.0.2.2/24 dev eth0
-    nsenter -t "$peer_pid" -n ip link set eth0 up
-
     # Intentionally only one guest NIC: the namespace TAP interface.
     # The setup key and CA travel through QEMU fw_cfg; neither is echoed on serial.
-    ip netns exec "$ns" qemu-system-x86_64 -enable-kvm -display none -m 256 \
+    ip netns exec "$ns" "$qemu" "${qemu_args[@]}" -display none -m 1024 \
         -drive file="$state/disk.img",format=raw,if=virtio \
         -netdev tap,id=n0,ifname="$tap",script=no,downscript=no \
         -device virtio-net-pci,netdev=n0 \
@@ -149,10 +143,13 @@ run)
         printf '\n'
         sleep 2
         # shellcheck disable=SC2016 # Deliberately emitted for expansion by the guest shell.
-        printf 'ip addr flush dev br-lan; ip addr add 192.0.2.10/24 dev br-lan; ip link set br-lan up; ip route replace default via 192.0.2.1; mkdir -p /etc/ssl/certs; cat /sys/firmware/qemu_fw_cfg/by_name/opt/netbird/ca-cert/raw > /etc/ssl/certs/netbird-e2e-ca.pem; setup_key=$(cat /sys/firmware/qemu_fw_cfg/by_name/opt/netbird/setup-key/raw); /etc/init.d/netbird start; netbird up --setup-key "$setup_key" --management-url "%s"; unset setup_key; for i in $(seq 1 30); do netbird status -d | grep -F "Connection type: P2P" && break; sleep 2; done; netbird status -d; wget -qO- "http://%s:%s/overlay-nonce" | grep -Fx "%s"; echo P2P-OVERLAY-PASS; /etc/init.d/netbird stop; NB_FORCE_RELAY=true /usr/bin/netbird service run >/tmp/netbird-relay.log 2>&1 & for i in $(seq 1 30); do netbird status -d | grep -F "Connection type: Relayed" && break; sleep 2; done; netbird status -d; wget -qO- "http://%s:%s/overlay-nonce" | grep -Fx "%s"; echo RELAY-OVERLAY-PASS\n' "$NB_MANAGEMENT_URL" "$PEER_OVERLAY_IP" "$PEER_PAYLOAD_PORT" "$overlay_nonce" "$PEER_OVERLAY_IP" "$PEER_PAYLOAD_PORT" "$overlay_nonce"
-        sleep 20
-    } | timeout 90 nc -U "$state/serial.sock" > "$state/console.log" 2>&1 || true
+        printf 'set -e; ip addr flush dev br-lan; ip addr add 192.0.2.10/24 dev br-lan; ip link set br-lan up; ip route replace default via 192.0.2.1; mkdir -p /etc/ssl/certs; cat /sys/firmware/qemu_fw_cfg/by_name/opt/netbird/ca-cert/raw > /etc/ssl/certs/netbird-e2e-ca.pem; setup_key=$(cat /sys/firmware/qemu_fw_cfg/by_name/opt/netbird/setup-key/raw); /etc/init.d/netbird start; netbird up --setup-key "$setup_key" --management-url "%s"; unset setup_key; for i in $(seq 1 30); do netbird status -d | grep -F "Connection type: P2P" && break; sleep 2; done; netbird status -d | grep -F "Connection type: P2P"; wget -qO- "http://%s:%s/overlay-nonce" | grep -Fx "%s"; echo P2P-OVERLAY-PASS; /etc/init.d/netbird stop; NB_FORCE_RELAY=true /usr/bin/netbird service run >/tmp/netbird-relay.log 2>&1 & for i in $(seq 1 30); do netbird status -d | grep -F "Connection type: Relayed" && break; sleep 2; done; netbird status -d | grep -F "Connection type: Relayed"; wget -qO- "http://%s:%s/overlay-nonce" | grep -Fx "%s"; echo RELAY-OVERLAY-PASS\n' "$NB_MANAGEMENT_URL" "$PEER_OVERLAY_IP" "$PEER_PAYLOAD_PORT" "$overlay_nonce" "$PEER_OVERLAY_IP" "$PEER_PAYLOAD_PORT" "$overlay_nonce"
+        sleep 180
+    } | timeout 240 nc -U "$state/serial.sock" > "$state/console.log" 2>&1 || true
     tr -d '\r' < "$state/console.log" > "$state/console.normalized"
+    if ! grep -Fxq 'RELAY-OVERLAY-PASS' "$state/console.normalized"; then
+        sed -n '/set -e; ip addr flush/,$p' "$state/console.normalized" | tail -100 >&2
+    fi
     grep -F 'Connection type: P2P' "$state/console.normalized"
     grep -F 'Connection type: Relayed' "$state/console.normalized"
     grep -Fx 'P2P-OVERLAY-PASS' "$state/console.normalized"
