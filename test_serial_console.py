@@ -26,6 +26,7 @@ def test_short_guest_command_waits_for_prompt():
                 conn.sendall(b"booting...\r\nroot@(none):~# ")
                 command = conn.recv(4096)
                 assert command.startswith(b"mkdir -p /mnt/e2e;")
+                assert command.endswith(b"\r")
                 assert b"setup-key" not in command
                 conn.sendall(b"\r\nConnection type: P2P\r\nP2P-OVERLAY-PASS\r\n")
                 conn.sendall(b"Connection type: Relayed\r\nRELAY-OVERLAY-PASS\r\n")

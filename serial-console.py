@@ -8,7 +8,7 @@ from pathlib import Path
 
 SOCKET = sys.argv[1]
 LOG = Path(sys.argv[2])
-COMMAND = b"mkdir -p /mnt/e2e; mount -t 9p -o trans=virtio,ro netbirdcfg /mnt/e2e && sh /mnt/e2e/guest-e2e.sh\n"
+COMMAND = b"mkdir -p /mnt/e2e; mount -t 9p -o trans=virtio,ro netbirdcfg /mnt/e2e && sh /mnt/e2e/guest-e2e.sh\r"
 PROMPT = re.compile(rb"root@[^\r\n:]+:~# ")
 
 
@@ -39,10 +39,10 @@ def main():
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock, LOG.open("wb") as log:
         sock.settimeout(1)
         sock.connect(SOCKET)
-        # First newline activates the root console if the guest is already ready.
-        sock.sendall(b"\n")
+        # Initial Enter may arrive during boot; retry after an idle prompt.
+        sock.sendall(b"\r")
         pump(sock, log, time.monotonic() + 120, lambda b: bool(PROMPT.search(b)),
-             on_idle=lambda: sock.sendall(b"\n"))
+             on_idle=lambda: sock.sendall(b"\r"))
         time.sleep(3)
         sock.sendall(COMMAND)
         recent = pump(sock, log, time.monotonic() + 240,

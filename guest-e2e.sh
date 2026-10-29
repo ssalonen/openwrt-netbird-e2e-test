@@ -36,14 +36,23 @@ await_connection() {
 }
 fetch_nonce() {
   path=$1 expected=$2
-  actual=$(wget -qO- "http://$peer_ip:$port/$path")
-  test "$actual" = "$expected"
+  n=0
+  while [ "$n" -lt 30 ]; do
+    actual=$(wget -T 5 -qO- "http://$peer_ip:$port/$path" 2>/tmp/e2e-wget-error || true)
+    if [ "$actual" = "$expected" ]; then return 0; fi
+    n=$((n + 1))
+    sleep 2
+  done
+  echo "FAIL: overlay $path payload did not match" >&2
+  cat /tmp/e2e-wget-error >&2
+  netbird status -d >&2 || true
+  return 1
 }
-await_connection P2P
 fetch_nonce p2p-nonce "$p2p_nonce"
+await_connection P2P
 echo P2P-OVERLAY-PASS
 /etc/init.d/netbird stop
 NB_FORCE_RELAY=true /usr/bin/netbird service run >/tmp/netbird-relay.log 2>&1 &
-await_connection Relayed
 fetch_nonce relay-nonce "$relay_nonce"
+await_connection Relayed
 echo RELAY-OVERLAY-PASS
