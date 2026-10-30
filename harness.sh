@@ -10,7 +10,7 @@ run_id=${RUN_ID:-qnb-$(date +%s)}
     exit 2
 }
 
-state_root=${STATE_ROOT:-/var/tmp/openwrt-netbird-qemu}
+state_root=${STATE_ROOT:-${RUNNER_TEMP:-${TMPDIR:-}}}
 state="$state_root/$run_id"
 ns="nbqemu-$run_id"
 tap="tap0"
@@ -58,6 +58,7 @@ build-image)
     sha256sum "$OUTPUT_IMAGE"
     ;;
 run)
+    [[ -n "$state_root" ]] || { echo 'set STATE_ROOT, RUNNER_TEMP or TMPDIR for disposable run state' >&2; exit 2; }
     : "${IMAGE:?set IMAGE to the baked OpenWrt ext4-combined image}"
     : "${NB_SETUP_KEY:?set NB_SETUP_KEY to a disposable NetBird setup key}"
     : "${NB_MANAGEMENT_URL:?set NB_MANAGEMENT_URL to the fixture management URL}"
