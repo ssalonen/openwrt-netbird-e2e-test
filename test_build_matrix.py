@@ -41,5 +41,21 @@ class BuildMatrixTests(unittest.TestCase):
         self.assertIn('persist-credentials: false', build)
 
 
+    def test_build_accepts_discovered_stable_version_not_one_fixed_patch(self):
+        build = BUILD.read_text()
+        self.assertNotIn('"$release" == 25.12.1', build)
+        self.assertIn('OPENWRT_RELEASE', build)
+        self.assertIn('snapshot', build)
+
+
+    def test_build_logs_are_quiet_and_raw_log_is_downloadable_on_failure(self):
+        workflow = WORKFLOW.read_text()
+        build = workflow.split('  build-image:', 1)[1].split('  e2e:', 1)[0]
+        self.assertIn('> "$RUNNER_TEMP/build.log" 2>&1', build)
+        self.assertIn('name: build-log-${{ matrix.arch }}', build)
+        self.assertIn('if: failure()', build)
+        self.assertNotIn('| tee "$RUNNER_TEMP/build.log"', build)
+
+
 if __name__ == '__main__':
     unittest.main()

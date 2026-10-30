@@ -3,12 +3,12 @@
 set -euo pipefail
 arch=${1:?usage: build-image.sh x86_64|arm64 OUTPUT_DIR}
 output=${2:?output directory required}
-release=${OPENWRT_RELEASE:?set OPENWRT_RELEASE to snapshot or 25.12.1}
+release=${OPENWRT_RELEASE:?set OPENWRT_RELEASE to snapshot or a discovered stable X.Y.Z}
 pr_number=${PR_NUMBER:?set PR_NUMBER to the resolved PR number}
 packages_ref=${PACKAGES_REF:?set PACKAGES_REF to the resolved PR head SHA}
 [[ "$pr_number" =~ ^[1-9][0-9]{0,7}$ ]] || { echo 'invalid PR number' >&2; exit 2; }
 [[ "$packages_ref" =~ ^[a-f0-9]{40}$ ]] || { echo 'PACKAGES_REF must be a full commit SHA' >&2; exit 2; }
-[[ "$release" == snapshot || "$release" == 25.12.1 ]] || { echo 'unsupported OpenWrt release' >&2; exit 2; }
+[[ "$release" == snapshot || "$release" =~ ^[0-9]{2,3}[.][0-9]{1,2}[.][0-9]{1,3}$ ]] || { echo 'unsupported OpenWrt release' >&2; exit 2; }
 case "$arch" in
   x86_64) target=x86/64; sdk_target=x86-64; pattern='*ext4-combined.img.gz' ;;
   arm64) target=armsr/armv8; sdk_target=armsr-armv8; pattern='*ext4-combined-efi.img.gz' ;;

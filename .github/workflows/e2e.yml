@@ -58,7 +58,14 @@ jobs:
           OPENWRT_RELEASE: ${{ needs.prepare.outputs.release }}
         run: |
           set -euo pipefail
-          ./build-image.sh '${{ matrix.arch }}' "$RUNNER_TEMP/image" 2>&1 | tee "$RUNNER_TEMP/build.log"
+          echo 'Building PR package and OpenWrt image; full output is captured locally.'
+          if ./build-image.sh '${{ matrix.arch }}' "$RUNNER_TEMP/image" > "$RUNNER_TEMP/build.log" 2>&1; then
+            echo 'Build complete. Exact toolchain and image details are in the test report.'
+          else
+            status=$?
+            echo 'Build failed. See the short build verdict below and the downloadable build-log artifact.'
+            exit "$status"
+          fi
           cp "$RUNNER_TEMP/image/guest.img.gz" "$RUNNER_TEMP/image/guest-${{ matrix.arch }}.img.gz"
           (cd "$RUNNER_TEMP/image" && sha256sum "guest-${{ matrix.arch }}.img.gz" > "guest-${{ matrix.arch }}.sha256")
       - name: Record build verdict
@@ -77,6 +84,13 @@ jobs:
           path: ${{ runner.temp }}/build-result-${{ matrix.arch }}.json
           if-no-files-found: error
           retention-days: 14
+      - uses: actions/upload-artifact@v6
+        if: failure()
+        with:
+          name: build-log-${{ matrix.arch }}
+          path: ${{ runner.temp }}/build.log
+          if-no-files-found: warn
+          retention-days: 2
       - uses: actions/upload-artifact@v6
         with:
           name: openwrt-guest-${{ matrix.arch }}
