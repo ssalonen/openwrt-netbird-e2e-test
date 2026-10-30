@@ -21,7 +21,8 @@ class ReportTests(unittest.TestCase):
                                             'url': 'https://downloads.openwrt.org/ib.tar.zst'},
                            'guest_image': {'sha256': 'e' * 64}, 'netbird_apk_sha256': 'f' * 64}
         self.result = {'p2p_connection': True, 'p2p_payload': True,
-                       'relay_connection': True, 'relay_payload': True}
+                       'relay_connection': True, 'relay_payload': True,
+                       'guest_version': '0.81.4', 'reference_version': '0.81.4'}
 
     def test_readable_report_includes_source_tools_and_all_gates(self):
         text, verdict = report.render_arch(self.selection, self.provenance, self.result,
@@ -33,6 +34,23 @@ class ReportTests(unittest.TestCase):
                        'P2P overlay payload: PASS', 'Relayed connection: PASS',
                        'Relayed overlay payload: PASS', 'Cleanup: PASS'):
             self.assertIn(detail, text)
+
+    def test_runtime_peer_versions_are_visible(self):
+        text, passed = report.render_arch(self.selection, self.provenance, self.result,
+                                          'x86_64', 'success', 'success')
+        self.assertTrue(passed)
+        self.assertIn('**OpenWrt guest NetBird:** `0.81.4`', text)
+        self.assertIn('**Docker reference NetBird:** `0.81.4`', text)
+
+    def test_missing_or_malformed_peer_version_fails_closed(self):
+        self.result['guest_version'] = ''
+        _, passed = report.render_arch(self.selection, self.provenance, self.result,
+                                       'x86_64', 'success', 'success')
+        self.assertFalse(passed)
+        self.result['guest_version'] = '0.81.4\nSETUP_KEY=secret'
+        _, passed = report.render_arch(self.selection, self.provenance, self.result,
+                                       'x86_64', 'success', 'success')
+        self.assertFalse(passed)
 
     def test_cannot_report_pass_when_runtime_or_cleanup_failed(self):
         text, verdict = report.render_arch(self.selection, self.provenance, self.result,

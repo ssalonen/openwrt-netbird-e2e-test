@@ -163,8 +163,12 @@ run)
     grep -Fx 'P2P-OVERLAY-PASS' "$state/console.normalized"
     grep -Fx 'RELAY-OVERLAY-PASS' "$state/console.normalized"
     if [[ -n ${E2E_RESULT_DIR:-} ]]; then
+        guest_version=$(sed -nE 's/^E2E-GUEST-VERSION: ([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' "$state/console.normalized" | sed -n '1p')
+        [[ "$guest_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'guest NetBird version marker missing' >&2; exit 1; }
+        [[ "${REFERENCE_NETBIRD_VERSION:-}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'reference NetBird version missing' >&2; exit 1; }
         mkdir -p "$E2E_RESULT_DIR"
-        (umask 022; printf '%s\n' '{"p2p_connection":true,"p2p_payload":true,"relay_connection":true,"relay_payload":true}' > "$E2E_RESULT_DIR/e2e-result.json")
+        (umask 022; printf '{"p2p_connection":true,"p2p_payload":true,"relay_connection":true,"relay_payload":true,"guest_version":"%s","reference_version":"%s"}\n' \
+            "$guest_version" "$REFERENCE_NETBIRD_VERSION" > "$E2E_RESULT_DIR/e2e-result.json")
     fi
     echo 'PASS: NetBird enrollment, P2P overlay nonce, and forced-relay overlay nonce'
     ;;

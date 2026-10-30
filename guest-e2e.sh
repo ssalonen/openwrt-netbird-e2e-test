@@ -76,4 +76,11 @@ fi
 netbird up --management-url "$url"
 fetch_nonce relay-nonce "$relay_nonce"
 await_connection Relayed
+version_status=$(netbird status)
+guest_version=$(printf '%s\n' "$version_status" | sed -nE 's/^[[:space:]]*Daemon version:[[:space:]]*([0-9]+\.[0-9]+\.[0-9]+).*$/\1/p' | sed -n '1p')
+if [ -z "$guest_version" ]; then
+  echo 'FAIL: guest NetBird daemon version unavailable' >&2
+  exit 1
+fi
+printf 'E2E-GUEST-VERSION: %s\n' "$guest_version"
 echo RELAY-OVERLAY-PASS

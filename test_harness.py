@@ -97,6 +97,18 @@ def test_runtime_emits_machine_readable_evidence_only_after_assertions():
     assert '"relay_payload":true' in runtime
 
 
+def test_runtime_versions_come_from_guest_and_reference_peer():
+    guest = HARNESS.with_name('guest-e2e.sh').read_text()
+    runtime = HARNESS.read_text()
+    launcher = HARNESS.with_name('run-e2e.sh').read_text()
+    assert 'E2E-GUEST-VERSION:' in guest
+    assert 'Daemon version:' in guest
+    assert 'REFERENCE_NETBIRD_VERSION=' in launcher
+    assert 'Daemon version:' in launcher
+    assert 'E2E-GUEST-VERSION:' in runtime
+    assert '"guest_version"' in runtime and '"reference_version"' in runtime
+
+
 if __name__ == '__main__':
     test_harness_has_separate_image_build_and_tap_only_run_modes()
     test_image_build_indexes_pr_package_before_imagebuilder_runs()
@@ -109,4 +121,5 @@ if __name__ == '__main__':
     test_baked_guest_boots_9p_script_without_serial_input()
     test_runtime_has_separate_p2p_and_relay_assertions()
     test_runtime_emits_machine_readable_evidence_only_after_assertions()
+    test_runtime_versions_come_from_guest_and_reference_peer()
     print('PASS: QEMU NetBird harness contract')

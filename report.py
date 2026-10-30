@@ -2,6 +2,7 @@
 """Human-readable, fail-closed CI evidence for both OpenWrt guest architectures."""
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -14,8 +15,12 @@ def render_arch(selection, provenance, result, arch, runtime, cleanup):
         raise ValueError('PR commit mismatch between selection and build provenance')
     if provenance and provenance['arch'] != arch:
         raise ValueError('architecture mismatch in build provenance')
+    versions = {}
+    for key in ('guest_version', 'reference_version'):
+        value = result.get(key, '')
+        versions[key] = value if isinstance(value, str) and re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', value) else None
     passed = bool(provenance and runtime == 'success' and cleanup == 'success' and
-                  all(result.get(key) is True for key, _ in GATES))
+                  all(result.get(key) is True for key, _ in GATES) and all(versions.values()))
     lines = [f'## {arch} — NetBird package E2E',
              f"- **PR:** [PR #{selection['pr_number']}]({selection['pr_url']})",
              f"- **Target branch:** `{selection['base_branch']}`",
@@ -32,7 +37,9 @@ def render_arch(selection, provenance, result, arch, runtime, cleanup):
                       f"- **Baked guest image SHA-256:** `{provenance['guest_image']['sha256']}`"])
     else:
         lines.append('- **Build provenance:** unavailable (build/download failed)')
-    lines.extend(['', '### Assertions'])
+    lines.extend([f"- **OpenWrt guest NetBird:** `{versions['guest_version'] or 'unavailable'}`",
+                  f"- **Docker reference NetBird:** `{versions['reference_version'] or 'unavailable'}`",
+                  '', '### Assertions'])
     for key, label in GATES:
         lines.append(f'- {label}: {"PASS" if runtime == "success" and result.get(key) is True else "FAIL"}')
     lines.extend([f'- Cleanup: {"PASS" if cleanup == "success" else "FAIL"}',

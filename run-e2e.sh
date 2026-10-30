@@ -54,12 +54,15 @@ done
 }
 peer_ip=$(printf '%s\n' "$status" | sed -nE 's/.*NetBird IP: (100\.[0-9]+\.[0-9]+\.[0-9]+).*/\1/p' | sed -n '1p')
 [[ "$peer_ip" =~ ^100\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'reference peer lacks overlay IP' >&2; exit 1; }
-printf 'Reference peer enrolled: %s\n' "$peer_ip"
+reference_version=$(printf '%s\n' "$status" | sed -nE 's/^[[:space:]]*Daemon version:[[:space:]]*([0-9]+\.[0-9]+\.[0-9]+).*$/\1/p' | sed -n '1p')
+[[ "$reference_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'reference peer lacks NetBird daemon version' >&2; exit 1; }
+printf 'Reference peer enrolled: %s (NetBird %s)\n' "$peer_ip" "$reference_version"
 before_forwarding=$(sysctl -n net.ipv4.ip_forward)
 result=0
 IMAGE="$image" NB_SETUP_KEY="$(<"$work/state/setup-key")" \
   NB_MANAGEMENT_URL="http://$server_ip" \
   PEER_CONTAINER="$peer" PEER_OVERLAY_IP="$peer_ip" \
+  REFERENCE_NETBIRD_VERSION="$reference_version" \
   RUN_ID="$run_id" STATE_ROOT="${RUNNER_TEMP:-/tmp}" GUEST_ARCH="$arch" ./harness.sh run || result=$?
 [[ "$(sysctl -n net.ipv4.ip_forward)" == "$before_forwarding" ]] || {
   echo 'LEAK: IPv4 forwarding was not restored' >&2
