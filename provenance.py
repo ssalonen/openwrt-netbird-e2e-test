@@ -36,11 +36,14 @@ def record(work, output, base, release, arch, pr_commit, pr_number, resolve_comm
     apk_hash = (output / 'netbird.apk.sha256').read_text().split()[0]
     if not re.fullmatch(r'[a-f0-9]{64}', apk_hash):
         raise ValueError('invalid package checksum')
+    package_version = (work / 'netbird-version').read_text().strip()
+    if not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', package_version):
+        raise ValueError('invalid NetBird package version')
     return {'arch': arch, 'pr_number': pr_number, 'pr_commit': pr_commit,
             'openwrt_release': release, 'firmware_version': version,
             'firmware_commit': commit, 'target_url': base,
             'sdk': tool('sdk'), 'imagebuilder': tool('imagebuilder'),
-            'netbird_apk_sha256': apk_hash,
+            'netbird_package_version': package_version, 'netbird_apk_sha256': apk_hash,
             'guest_image': {'filename': 'guest.img.gz', 'sha256': digest(output / 'guest.img.gz')}}
 
 

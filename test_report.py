@@ -19,7 +19,8 @@ class ReportTests(unittest.TestCase):
                                    'url': 'https://downloads.openwrt.org/sdk.tar.zst'},
                            'imagebuilder': {'filename': 'openwrt-imagebuilder.tar.zst', 'sha256': 'd' * 64,
                                             'url': 'https://downloads.openwrt.org/ib.tar.zst'},
-                           'guest_image': {'sha256': 'e' * 64}, 'netbird_apk_sha256': 'f' * 64}
+                           'guest_image': {'sha256': 'e' * 64}, 'netbird_apk_sha256': 'f' * 64,
+                           'netbird_package_version': '0.81.4'}
         self.result = {'p2p_connection': True, 'p2p_payload': True,
                        'relay_connection': True, 'relay_payload': True,
                        'guest_version': '0.81.4', 'reference_version': '0.81.4'}
@@ -51,6 +52,13 @@ class ReportTests(unittest.TestCase):
         _, passed = report.render_arch(self.selection, self.provenance, self.result,
                                        'x86_64', 'success', 'success')
         self.assertFalse(passed)
+
+    def test_guest_runtime_version_must_match_pr_package(self):
+        self.result['guest_version'] = '0.82.0'
+        text, passed = report.render_arch(self.selection, self.provenance, self.result,
+                                          'x86_64', 'success', 'success')
+        self.assertFalse(passed)
+        self.assertIn('NetBird APK version', text)
 
     def test_cannot_report_pass_when_runtime_or_cleanup_failed(self):
         text, verdict = report.render_arch(self.selection, self.provenance, self.result,

@@ -3,6 +3,8 @@
 set -euo pipefail
 arch=${1:?usage: run-e2e.sh x86_64|arm64 IMAGE}
 image=${2:?guest image required}
+version=${NETBIRD_TEST_VERSION:?set NETBIRD_TEST_VERSION from the verified PR package provenance}
+[[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'invalid NetBird test version' >&2; exit 2; }
 [[ "$arch" == x86_64 || "$arch" == arm64 ]] || exit 2
 [[ $(uname -m) == "${arch/arm64/aarch64}" ]] || { echo "runner architecture mismatch" >&2; exit 2; }
 test -s "$image"
@@ -27,7 +29,8 @@ cleanup() {
   if test -f "$work/owner-marker"; then fixtures/upstream/stop.sh "$work"; fi
 }
 trap cleanup EXIT
-FIXTURE_ROOT=$(dirname "$work") FIXTURE_RUN_ID=$(basename "$work") fixtures/upstream/start.sh
+FIXTURE_ROOT=$(dirname "$work") FIXTURE_RUN_ID=$(basename "$work") \
+  NETBIRD_FIXTURE_REF="v$version" NETBIRD_SERVER_VERSION="$version" fixtures/upstream/start.sh
 # In use-ip mode the generator advertises the runner's primary IPv4 on port 80.
 server_ip=$(ip route get 1.1.1.1 | awk '{for(i=1;i<=NF;i++) if ($i=="src") {print $(i+1); exit}}')
 [[ "$server_ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]
@@ -40,7 +43,7 @@ docker run -d --name "$peer" --hostname "$peer" \
   --mount "type=bind,src=$work/reference-data,dst=/var/lib/netbird" \
   -e NB_SETUP_KEY_FILE=/run/secrets/netbird-setup-key \
   -e NB_MANAGEMENT_URL="http://$server_ip" \
-  netbirdio/netbird:0.81.4 >/dev/null
+  netbirdio/netbird:"$version" >/dev/null
 status=''
 for _ in $(seq 1 60); do
   status=$(docker exec "$peer" netbird status 2>/dev/null || true)
@@ -56,6 +59,7 @@ peer_ip=$(printf '%s\n' "$status" | sed -nE 's/.*NetBird IP: (100\.[0-9]+\.[0-9]
 [[ "$peer_ip" =~ ^100\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'reference peer lacks overlay IP' >&2; exit 1; }
 reference_version=$(printf '%s\n' "$status" | sed -nE 's/^[[:space:]]*Daemon version:[[:space:]]*([0-9]+\.[0-9]+\.[0-9]+).*$/\1/p' | sed -n '1p')
 [[ "$reference_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'reference peer lacks NetBird daemon version' >&2; exit 1; }
+[[ "$reference_version" == "$version" ]] || { echo 'reference peer version does not match PR package' >&2; exit 1; }
 printf 'Reference peer enrolled: %s (NetBird %s)\n' "$peer_ip" "$reference_version"
 before_forwarding=$(sysctl -n net.ipv4.ip_forward)
 result=0

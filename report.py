@@ -20,7 +20,8 @@ def render_arch(selection, provenance, result, arch, runtime, cleanup):
         value = result.get(key, '')
         versions[key] = value if isinstance(value, str) and re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', value) else None
     passed = bool(provenance and runtime == 'success' and cleanup == 'success' and
-                  all(result.get(key) is True for key, _ in GATES) and all(versions.values()))
+                  all(result.get(key) is True for key, _ in GATES) and all(versions.values()) and
+                  versions['guest_version'] == provenance.get('netbird_package_version'))
     lines = [f'## {arch} — NetBird package E2E',
              f"- **PR:** [PR #{selection['pr_number']}]({selection['pr_url']})",
              f"- **Target branch:** `{selection['base_branch']}`",
@@ -33,7 +34,8 @@ def render_arch(selection, provenance, result, arch, runtime, cleanup):
             tool = provenance[key]
             lines.extend([f"- **{label}:** [{tool['filename']}]({tool['url']})",
                           f"- **{label} SHA-256:** `{tool['sha256']}`"])
-        lines.extend([f"- **NetBird APK SHA-256:** `{provenance['netbird_apk_sha256']}`",
+        lines.extend([f"- **NetBird APK version:** `{provenance.get('netbird_package_version', 'unavailable')}`",
+                      f"- **NetBird APK SHA-256:** `{provenance['netbird_apk_sha256']}`",
                       f"- **Baked guest image SHA-256:** `{provenance['guest_image']['sha256']}`"])
     else:
         lines.append('- **Build provenance:** unavailable (build/download failed)')

@@ -26,7 +26,12 @@ git -C "$repo" fetch -q --no-tags origin "refs/pull/$pr_number/head"
 [[ $(git -C "$repo" rev-parse FETCH_HEAD) == "$packages_ref" ]] || { echo 'PR head changed since resolution' >&2; exit 1; }
 git -C "$repo" checkout -q --detach FETCH_HEAD
 [[ $(git -C "$repo" rev-parse HEAD) == "$packages_ref" ]]
-grep -Fx 'PKG_VERSION:=0.81.4' "$repo/net/netbird/Makefile"
+pkg_version=$(sed -nE 's/^PKG_VERSION:=([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' "$repo/net/netbird/Makefile")
+pkg_release=$(sed -nE 's/^PKG_RELEASE:=([0-9]+)$/\1/p' "$repo/net/netbird/Makefile")
+[[ "$pkg_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ && "$pkg_release" =~ ^[0-9]+$ ]] || {
+  echo 'NetBird package version/release is not a single numeric value' >&2; exit 1;
+}
+printf '%s\n' "$pkg_version" > "$work/netbird-version"
 if [[ "$release" == snapshot ]]; then
   base="https://downloads.openwrt.org/snapshots/targets/$target"
   prefix_release=''
@@ -58,7 +63,7 @@ printf 'src-link packages %s\n' "$repo" > "$sdk/feeds.conf"
   make defconfig
   make -j2 package/feeds/packages/netbird/compile V=sc
 )
-package=$(find "$sdk/bin/packages" -type f -name 'netbird-0.81.4-r1.apk' -print -quit)
+package=$(find "$sdk/bin/packages" -type f -name "netbird-$pkg_version-r$pkg_release.apk" -print -quit)
 test -s "$package"
 sha256sum "$package" > "$output/netbird.apk.sha256"
 # ImageBuilder has its own APK v3 signer and cannot consume the SDK signature

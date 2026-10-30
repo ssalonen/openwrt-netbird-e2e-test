@@ -57,5 +57,24 @@ class BuildMatrixTests(unittest.TestCase):
         self.assertNotIn('| tee "$RUNNER_TEMP/build.log"', build)
 
 
+    def test_build_uses_version_from_pr_not_fixed_0814(self):
+        build = BUILD.read_text()
+        self.assertNotIn("grep -Fx 'PKG_VERSION:=0.81.4'", build)
+        self.assertNotIn("netbird-0.81.4-r1.apk", build)
+        self.assertIn('netbird-version', build)
+
+
+    def test_fixture_and_reference_use_pr_package_version(self):
+        launcher = (BUILD.parent / 'run-e2e.sh').read_text()
+        fixture = (BUILD.parent / 'fixtures/upstream/start.sh').read_text()
+        workflow = WORKFLOW.read_text()
+        self.assertIn('NETBIRD_TEST_VERSION', launcher)
+        self.assertIn('NETBIRD_FIXTURE_REF=', launcher)
+        self.assertIn('NETBIRD_SERVER_VERSION=', launcher)
+        self.assertIn('netbirdio/netbird:"$version"', launcher)
+        self.assertIn('NETBIRD_TEST_VERSION=', workflow)
+        self.assertIn('NETBIRD_SERVER_VERSION', fixture)
+
+
 if __name__ == '__main__':
     unittest.main()

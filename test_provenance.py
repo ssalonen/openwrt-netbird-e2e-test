@@ -15,6 +15,7 @@ class ProvenanceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / 'version.buildinfo').write_text('r37901-2777161847\n')
+            (root / 'netbird-version').write_text('0.82.0\n')
             (root / 'sdk.metadata').write_text('openwrt-sdk-x86-64.Linux-x86_64.tar.zst ' + 'a' * 64 + '\n')
             (root / 'imagebuilder.metadata').write_text('openwrt-imagebuilder-x86-64.Linux-x86_64.tar.zst ' + 'b' * 64 + '\n')
             (root / 'netbird.apk.sha256').write_text('c' * 64 + '  /private/sdk/netbird.apk\n')
@@ -27,6 +28,7 @@ class ProvenanceTests(unittest.TestCase):
             self.assertEqual(result['imagebuilder']['sha256'], 'b' * 64)
             self.assertEqual(result['guest_image']['sha256'], provenance.digest(root / 'guest.img.gz'))
             self.assertEqual(result['pr_commit'], 'a' * 40)
+            self.assertEqual(result['netbird_package_version'], '0.82.0')
 
     def test_rejects_mismatched_firmware_commit(self):
         with tempfile.TemporaryDirectory() as tmp:

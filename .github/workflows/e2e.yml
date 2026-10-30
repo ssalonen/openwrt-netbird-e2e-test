@@ -127,12 +127,14 @@ jobs:
         run: |
           set -euo pipefail
           (cd "$RUNNER_TEMP/image" && sha256sum -c 'guest-${{ matrix.arch }}.sha256')
+          NETBIRD_TEST_VERSION=$(python3 -c 'import json,re,sys; v=json.load(open(sys.argv[1]))["netbird_package_version"]; assert re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+",v); print(v)' "$RUNNER_TEMP/image/provenance.json")
+          echo "NETBIRD_TEST_VERSION=$NETBIRD_TEST_VERSION" >> "$GITHUB_ENV"
           sudo apt-get update -qq
           sudo apt-get install -y qemu-system-x86 qemu-system-arm qemu-efi-aarch64 iproute2 iptables netcat-openbsd
           test -c /dev/kvm && test -c /dev/net/tun
       - name: Start fixture and reference peer, run TAP-only QEMU
         id: runtime
-        run: sudo RUNNER_TEMP="$RUNNER_TEMP" E2E_RESULT_DIR="$RUNNER_TEMP" GITHUB_RUN_ID="$GITHUB_RUN_ID" ./run-e2e.sh '${{ matrix.arch }}' "$RUNNER_TEMP/image/guest-${{ matrix.arch }}.img.gz"
+        run: sudo RUNNER_TEMP="$RUNNER_TEMP" NETBIRD_TEST_VERSION="$NETBIRD_TEST_VERSION" E2E_RESULT_DIR="$RUNNER_TEMP" GITHUB_RUN_ID="$GITHUB_RUN_ID" ./run-e2e.sh '${{ matrix.arch }}' "$RUNNER_TEMP/image/guest-${{ matrix.arch }}.img.gz"
       - name: Verify no disposable resources remain
         id: cleanup
         if: always()

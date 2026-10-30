@@ -17,7 +17,7 @@ The workflow needs no prebuilt image, APK URL, or long-lived credentials:
 5. Boot the OpenWrt guest with **only one TAP NIC**, enroll it, require P2P plus a fresh overlay nonce, restart with `NB_FORCE_RELAY=true`, and require `Relayed` plus a second, distinct nonce.
 6. Read back cleanup: no named namespace, host TAP/bridge/gateway, fixture container, peer, payload server, firewall rule, temporary image, or fixture credential directory.
 
-The control-plane fixture is generated from the pinned upstream NetBird `v0.81.4` script; this harness currently requires a `0.81.4-r1` NetBird package, so a future PR upgrading NetBird itself needs a separate compatibility-fixture update. It uses HTTP on an ephemeral CI runner and synthetic credentials only; do not expose it on a non-disposable host. The guest receives its disposable key through a temporary **read-only 9p share**, never as a serial-console command or QEMU argument. The runner's IP forwarding and tagged iptables rules are restored/removed in the harness exit trap.
+The control-plane fixture and Docker reference peer use the version from the PR's NetBird Makefile; the report checks the guest's runtime daemon version against that package version. The fixture uses HTTP on an ephemeral CI runner and synthetic credentials only; do not expose it on a non-disposable host. The guest receives its disposable key through a temporary **read-only 9p share**, never as a serial-console command or QEMU argument. The runner's IP forwarding and tagged iptables rules are restored/removed in the harness exit trap.
 
 ## Local checks
 
