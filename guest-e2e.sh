@@ -23,8 +23,10 @@ if [ -f /mnt/e2e/upgrade-netbird.apk ]; then
   apk add --allow-untrusted /mnt/e2e/upgrade-netbird.apk
   after=$(sha256sum /etc/netbird/certs/device.pem /etc/netbird/certs/device.key)
   [ "$before" = "$after" ]
-  [ "$(stat -c '%a' /etc/netbird/certs)" = 700 ]
-  [ "$(stat -c '%a' /etc/netbird/certs/device.key)" = 600 ]
+  # shellcheck disable=SC2012 # Literal paths; this BusyBox image has no stat applet.
+  [ "$(ls -ld /etc/netbird/certs | awk '{print $1}')" = drwx------ ]
+  # shellcheck disable=SC2012 # Literal paths; this BusyBox image has no stat applet.
+  [ "$(ls -ld /etc/netbird/certs/device.key | awk '{print $1}')" = -rw------- ]
   echo CONFFILE-UPGRADE-PASS
 fi
 # The test guest has exactly one physical NIC. Never configure a second WAN NIC.

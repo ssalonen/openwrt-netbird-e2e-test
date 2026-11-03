@@ -106,7 +106,15 @@ apk="$ib/staging_dir/host/bin/apk"
 cp "$ib/repositories" "$ib/repositories.upstream"
 { printf 'file://%s/packages.adb\n' "$repo_dir"; cat "$ib/repositories.upstream"; } > "$ib/repositories"
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
-make -C "$ib" image PACKAGES='netbird wget coreutils-timeout kmod-wireguard kmod-tun kmod-fs-9p kmod-9pnet kmod-9pvirtio' FILES="$root/image-overlay"
+image_args=(
+  image
+  'PACKAGES=netbird wget coreutils-timeout kmod-wireguard kmod-tun kmod-fs-9p kmod-9pnet kmod-9pvirtio'
+  "FILES=$root/image-overlay"
+)
+# The upgrade case stages r2 alongside the installed r1 package.  The default
+# x86 image is too small for that transaction, so enlarge only this test image.
+if [[ -n "$base_packages_ref" ]]; then image_args+=(ROOTFS_PARTSIZE=256); fi
+make -C "$ib" "${image_args[@]}"
 image=$(find "$ib/bin/targets" -type f -name "$pattern" -print -quit)
 test -s "$image"
 cp "$image" "$output/guest.img.gz"
