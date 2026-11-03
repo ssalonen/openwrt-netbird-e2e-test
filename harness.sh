@@ -107,6 +107,10 @@ run)
     gzip -dc "$IMAGE" > "$state/disk.img"
     mkdir -m 700 "$state/config"
     cp "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)/guest-e2e.sh" "$state/config/guest-e2e.sh"
+    if [[ -n ${UPGRADE_APK:-} ]]; then
+        test -s "$UPGRADE_APK"
+        cp "$UPGRADE_APK" "$state/config/upgrade-netbird.apk"
+    fi
     printf '%s\n' "$NB_SETUP_KEY" > "$state/config/setup-key"
     printf '%s\n' "$NB_MANAGEMENT_URL" > "$state/config/management-url"
     printf '%s\n' "$PEER_OVERLAY_IP" > "$state/config/peer-ip"
@@ -162,6 +166,7 @@ run)
     grep -F 'Connection type: Relayed' "$state/console.normalized"
     grep -Fx 'P2P-OVERLAY-PASS' "$state/console.normalized"
     grep -Fx 'RELAY-OVERLAY-PASS' "$state/console.normalized"
+    if [[ -n ${UPGRADE_APK:-} ]]; then grep -Fx 'CONFFILE-UPGRADE-PASS' "$state/console.normalized"; fi
     if [[ -n ${E2E_RESULT_DIR:-} ]]; then
         guest_version=$(sed -nE 's/^E2E-GUEST-VERSION: ([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' "$state/console.normalized" | sed -n '1p')
         [[ "$guest_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'guest NetBird version marker missing' >&2; exit 1; }

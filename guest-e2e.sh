@@ -13,6 +13,20 @@ ip addr flush dev br-lan
 ip addr add 192.0.2.10/24 dev br-lan
 ip link set br-lan up
 ip route replace default via 192.0.2.1
+if [ -f /mnt/e2e/upgrade-netbird.apk ]; then
+  mkdir -p /etc/netbird/certs
+  printf 'certificate-sentinel\n' > /etc/netbird/certs/device.pem
+  printf 'key-sentinel\n' > /etc/netbird/certs/device.key
+  chmod 700 /etc/netbird/certs
+  chmod 600 /etc/netbird/certs/device.key
+  before=$(sha256sum /etc/netbird/certs/device.pem /etc/netbird/certs/device.key)
+  apk add --allow-untrusted /mnt/e2e/upgrade-netbird.apk
+  after=$(sha256sum /etc/netbird/certs/device.pem /etc/netbird/certs/device.key)
+  [ "$before" = "$after" ]
+  [ "$(stat -c '%a' /etc/netbird/certs)" = 700 ]
+  [ "$(stat -c '%a' /etc/netbird/certs/device.key)" = 600 ]
+  echo CONFFILE-UPGRADE-PASS
+fi
 # The test guest has exactly one physical NIC. Never configure a second WAN NIC.
 /etc/init.d/netbird start
 netbird up --setup-key "$setup_key" --management-url "$url"

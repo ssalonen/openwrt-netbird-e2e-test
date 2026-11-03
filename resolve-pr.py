@@ -72,8 +72,9 @@ def select(pr, filenames, resolve_release=discover_latest):
     if 'net/netbird/Makefile' not in filenames:
         raise ValueError('PR does not change the NetBird Makefile')
     sha = pr['head']['sha']
-    if not re.fullmatch(r'[a-f0-9]{40}', sha):
-        raise ValueError('invalid PR head SHA')
+    base_sha = pr['base']['sha']
+    if not re.fullmatch(r'[a-f0-9]{40}', sha) or not re.fullmatch(r'[a-f0-9]{40}', base_sha):
+        raise ValueError('invalid PR commit SHA')
     number = pr['number']
     if not isinstance(number, int) or number <= 0:
         raise ValueError('invalid PR number')
@@ -81,7 +82,7 @@ def select(pr, filenames, resolve_release=discover_latest):
     if branch != 'master' and not re.fullmatch(rf'{re.escape(stable.group(1))}\.[0-9]+', release):
         raise ValueError('discovered release does not match PR base')
     return {'pr_number': number, 'pr_url': pr['html_url'],
-            'base_branch': branch, 'head_sha': sha,
+            'base_branch': branch, 'head_sha': sha, 'base_sha': base_sha,
             'source_ref': f'refs/pull/{number}/head',
             'release': release}
 

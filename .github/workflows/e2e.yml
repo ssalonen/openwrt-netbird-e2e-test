@@ -8,6 +8,11 @@ name: NetBird E2E
         required: true
         default: '30895'
         type: string
+      conffile_upgrade:
+        description: Build the base package and verify certificate files survive upgrade
+        required: false
+        default: false
+        type: boolean
 permissions:
   contents: read
 jobs:
@@ -17,6 +22,7 @@ jobs:
     outputs:
       pr_number: ${{ steps.pr.outputs.pr_number }}
       head_sha: ${{ steps.pr.outputs.head_sha }}
+      base_sha: ${{ steps.pr.outputs.base_sha }}
       base_branch: ${{ steps.pr.outputs.base_branch }}
       release: ${{ steps.pr.outputs.release }}
     steps:
@@ -55,6 +61,7 @@ jobs:
         env:
           PR_NUMBER: ${{ needs.prepare.outputs.pr_number }}
           PACKAGES_REF: ${{ needs.prepare.outputs.head_sha }}
+          BASE_PACKAGES_REF: ${{ inputs.conffile_upgrade && needs.prepare.outputs.base_sha || '' }}
           OPENWRT_RELEASE: ${{ needs.prepare.outputs.release }}
         run: |
           set -euo pipefail
@@ -100,6 +107,13 @@ jobs:
             ${{ runner.temp }}/image/provenance.json
           if-no-files-found: error
           retention-days: 2
+      - uses: actions/upload-artifact@v6
+        if: inputs.conffile_upgrade
+        with:
+          name: conffile-upgrade-${{ matrix.arch }}
+          path: ${{ runner.temp }}/image/upgrade-netbird.apk
+          if-no-files-found: error
+          retention-days: 2
   e2e:
     name: ${{ matrix.arch }} P2P and forced relay
     needs: build-image
@@ -123,6 +137,11 @@ jobs:
         with:
           name: openwrt-guest-${{ matrix.arch }}
           path: ${{ runner.temp }}/image
+      - uses: actions/download-artifact@v7
+        if: inputs.conffile_upgrade
+        with:
+          name: conffile-upgrade-${{ matrix.arch }}
+          path: ${{ runner.temp }}/image
       - name: Verify guest artifact and runtime tools
         run: |
           set -euo pipefail
@@ -134,7 +153,9 @@ jobs:
           test -c /dev/kvm && test -c /dev/net/tun
       - name: Start fixture and reference peer, run TAP-only QEMU
         id: runtime
-        run: sudo RUNNER_TEMP="$RUNNER_TEMP" NETBIRD_TEST_VERSION="$NETBIRD_TEST_VERSION" E2E_RESULT_DIR="$RUNNER_TEMP" GITHUB_RUN_ID="$GITHUB_RUN_ID" ./run-e2e.sh '${{ matrix.arch }}' "$RUNNER_TEMP/image/guest-${{ matrix.arch }}.img.gz"
+        env:
+          CONFFILE_UPGRADE_APK: ${{ inputs.conffile_upgrade && format('{0}/image/upgrade-netbird.apk', runner.temp) || '' }}
+        run: sudo RUNNER_TEMP="$RUNNER_TEMP" NETBIRD_TEST_VERSION="$NETBIRD_TEST_VERSION" E2E_RESULT_DIR="$RUNNER_TEMP" GITHUB_RUN_ID="$GITHUB_RUN_ID" CONFFILE_UPGRADE_APK="$CONFFILE_UPGRADE_APK" ./run-e2e.sh '${{ matrix.arch }}' "$RUNNER_TEMP/image/guest-${{ matrix.arch }}.img.gz"
       - name: Verify no disposable resources remain
         id: cleanup
         if: always()
