@@ -67,6 +67,8 @@ IMAGE="$image" NB_SETUP_KEY="$(<"$work/state/setup-key")" \
   NB_MANAGEMENT_URL="http://$server_ip" \
   PEER_CONTAINER="$peer" PEER_OVERLAY_IP="$peer_ip" \
   REFERENCE_NETBIRD_VERSION="$reference_version" \
+  CONFFILE_UPGRADE_APK="${CONFFILE_UPGRADE_APK:-}" \
+  UPGRADE_APK="${CONFFILE_UPGRADE_APK:-}" \
   RUN_ID="$run_id" STATE_ROOT="${RUNNER_TEMP:-/tmp}" GUEST_ARCH="$arch" ./harness.sh run || result=$?
 [[ "$(sysctl -n net.ipv4.ip_forward)" == "$before_forwarding" ]] || {
   echo 'LEAK: IPv4 forwarding was not restored' >&2

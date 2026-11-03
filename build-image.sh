@@ -6,8 +6,10 @@ output=${2:?output directory required}
 release=${OPENWRT_RELEASE:?set OPENWRT_RELEASE to snapshot or a discovered stable X.Y.Z}
 pr_number=${PR_NUMBER:?set PR_NUMBER to the resolved PR number}
 packages_ref=${PACKAGES_REF:?set PACKAGES_REF to the resolved PR head SHA}
+base_packages_ref=${BASE_PACKAGES_REF:-}
 [[ "$pr_number" =~ ^[1-9][0-9]{0,7}$ ]] || { echo 'invalid PR number' >&2; exit 2; }
 [[ "$packages_ref" =~ ^[a-f0-9]{40}$ ]] || { echo 'PACKAGES_REF must be a full commit SHA' >&2; exit 2; }
+[[ -z "$base_packages_ref" || "$base_packages_ref" =~ ^[a-f0-9]{40}$ ]] || { echo 'BASE_PACKAGES_REF must be a full commit SHA' >&2; exit 2; }
 [[ "$release" == snapshot || "$release" =~ ^[0-9]{2,3}[.][0-9]{1,2}[.][0-9]{1,3}$ ]] || { echo 'unsupported OpenWrt release' >&2; exit 2; }
 case "$arch" in
   x86_64) target=x86/64; sdk_target=x86-64; pattern='*ext4-combined.img.gz' ;;
@@ -65,6 +67,25 @@ printf 'src-link packages %s\n' "$repo" > "$sdk/feeds.conf"
 )
 package=$(find "$sdk/bin/packages" -type f -name "netbird-$pkg_version-r$pkg_release.apk" -print -quit)
 test -s "$package"
+if [[ -n "$base_packages_ref" ]]; then
+  cp "$package" "$output/upgrade-netbird.apk"
+  git -C "$repo" fetch -q --no-tags origin "$base_packages_ref"
+  git -C "$repo" checkout -q --detach "$base_packages_ref"
+  base_version=$(sed -nE 's/^PKG_VERSION:=([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' "$repo/net/netbird/Makefile")
+  base_release=$(sed -nE 's/^PKG_RELEASE:=([0-9]+)$/\1/p' "$repo/net/netbird/Makefile")
+  [[ "$base_version" == "$pkg_version" && $((base_release + 1)) -eq "$pkg_release" ]] || {
+    echo 'conffile upgrade requires the same version and a one-step package release bump' >&2; exit 1;
+  }
+  (
+    cd "$sdk"
+    make package/feeds/packages/netbird/clean
+    make -j2 package/feeds/packages/netbird/compile V=sc
+  )
+  package=$(find "$sdk/bin/packages" -type f -name "netbird-$base_version-r$base_release.apk" -print -quit)
+  test -s "$package"
+  cp "$package" "$output/netbird-$base_version-r$base_release.apk"
+  package="$output/netbird-$base_version-r$base_release.apk"
+fi
 sha256sum "$package" > "$output/netbird.apk.sha256"
 # ImageBuilder has its own APK v3 signer and cannot consume the SDK signature
 # blindly. Copy only the verified package; the original remains untouched.
@@ -85,7 +106,15 @@ apk="$ib/staging_dir/host/bin/apk"
 cp "$ib/repositories" "$ib/repositories.upstream"
 { printf 'file://%s/packages.adb\n' "$repo_dir"; cat "$ib/repositories.upstream"; } > "$ib/repositories"
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
-make -C "$ib" image PACKAGES='netbird wget coreutils-timeout kmod-wireguard kmod-tun kmod-fs-9p kmod-9pnet kmod-9pvirtio' FILES="$root/image-overlay"
+image_args=(
+  image
+  'PACKAGES=netbird wget coreutils-timeout kmod-wireguard kmod-tun kmod-fs-9p kmod-9pnet kmod-9pvirtio'
+  "FILES=$root/image-overlay"
+)
+# The upgrade case stages r2 alongside the installed r1 package.  The default
+# x86 image is too small for that transaction, so enlarge only this test image.
+if [[ -n "$base_packages_ref" ]]; then image_args+=(ROOTFS_PARTSIZE=256); fi
+make -C "$ib" "${image_args[@]}"
 image=$(find "$ib/bin/targets" -type f -name "$pattern" -print -quit)
 test -s "$image"
 cp "$image" "$output/guest.img.gz"

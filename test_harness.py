@@ -109,6 +109,36 @@ def test_runtime_versions_come_from_guest_and_reference_peer():
     assert '"guest_version"' in runtime and '"reference_version"' in runtime
 
 
+def test_conffile_upgrade_bakes_base_package_in_an_enlarged_rootfs():
+    build = HARNESS.with_name('build-image.sh').read_text()
+    assert 'BASE_PACKAGES_REF' in build
+    assert 'base_release' in build
+    assert 'upgrade-netbird.apk' in build
+    assert 'ROOTFS_PARTSIZE=256' in build
+
+
+def test_conffile_upgrade_checks_modes_without_a_stat_applet():
+    guest = HARNESS.with_name('guest-e2e.sh').read_text()
+    assert 'stat -c' not in guest
+    assert "ls -ld /etc/netbird/certs | awk '{print $1}'" in guest
+    assert "ls -ld /etc/netbird/certs/device.key | awk '{print $1}'" in guest
+
+
+def test_runtime_mounts_candidate_package_only_for_conffile_upgrade():
+    runtime = HARNESS.read_text()
+    launcher = HARNESS.with_name('run-e2e.sh').read_text()
+    assert 'UPGRADE_APK' in runtime
+    assert 'upgrade-netbird.apk' in runtime
+    assert 'CONFFILE_UPGRADE_APK' in launcher
+
+
+def test_guest_checks_certificate_files_survive_the_package_upgrade():
+    guest = HARNESS.with_name('guest-e2e.sh').read_text()
+    assert 'CONFFILE-UPGRADE-PASS' in guest
+    assert '/etc/netbird/certs/device.pem' in guest
+    assert 'apk add --allow-untrusted /mnt/e2e/upgrade-netbird.apk' in guest
+
+
 if __name__ == '__main__':
     test_harness_has_separate_image_build_and_tap_only_run_modes()
     test_image_build_indexes_pr_package_before_imagebuilder_runs()
@@ -122,4 +152,8 @@ if __name__ == '__main__':
     test_runtime_has_separate_p2p_and_relay_assertions()
     test_runtime_emits_machine_readable_evidence_only_after_assertions()
     test_runtime_versions_come_from_guest_and_reference_peer()
+    test_conffile_upgrade_bakes_base_package_in_an_enlarged_rootfs()
+    test_conffile_upgrade_checks_modes_without_a_stat_applet()
+    test_runtime_mounts_candidate_package_only_for_conffile_upgrade()
+    test_guest_checks_certificate_files_survive_the_package_upgrade()
     print('PASS: QEMU NetBird harness contract')
